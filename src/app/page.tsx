@@ -23,9 +23,9 @@ export default function Home() {
           frost={6}
           splay={20}
           lightAngle={0}
-          lightOpacity={40}
+          lightOpacity={100}
           radius={48}
-          className="w-64 h-128"
+          className="w-64 h-64"
         />
       </div>
     </main>

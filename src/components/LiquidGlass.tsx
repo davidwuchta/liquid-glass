@@ -2,11 +2,12 @@
 
 import React, { useEffect, useId, useRef } from "react";
 
-const SHADER_VERSION = 13;
+const SHADER_VERSION = 15;
 
 interface CachedLayers {
   displacementUrl: string;
-  shadingUrl: string;
+  darkenUrl: string;
+  brightenUrl: string;
   rimUrl: string;
 }
 
@@ -32,15 +33,23 @@ function getOrGenerateLayers(
   const dispImg = dispCtx.createImageData(w, h);
   const dispData = dispImg.data;
 
-  // 2. Bevel Shading Canvas (Scales with lightOpacity & rotates with lightAngle)
-  const shadeCanvas = document.createElement("canvas");
-  shadeCanvas.width = w;
-  shadeCanvas.height = h;
-  const shadeCtx = shadeCanvas.getContext("2d")!;
-  const shadeImg = shadeCtx.createImageData(w, h);
-  const shadeData = shadeImg.data;
+  // 2A. Top Darkening Canvas (Black pixels with alpha -> subtracts brightness via plus-darker)
+  const darkCanvas = document.createElement("canvas");
+  darkCanvas.width = w;
+  darkCanvas.height = h;
+  const darkCtx = darkCanvas.getContext("2d")!;
+  const darkImg = darkCtx.createImageData(w, h);
+  const darkData = darkImg.data;
 
-  // 3. 1px Surface-Normal Specular Rim Canvas (Scales with lightOpacity & rotates with lightAngle)
+  // 2B. Bottom Brightening Canvas (White pixels with alpha -> adds brightness via plus-lighter)
+  const brightCanvas = document.createElement("canvas");
+  brightCanvas.width = w;
+  brightCanvas.height = h;
+  const brightCtx = brightCanvas.getContext("2d")!;
+  const brightImg = brightCtx.createImageData(w, h);
+  const brightData = brightImg.data;
+
+  // 3. 1px Surface-Normal Specular Rim Canvas
   const rimCanvas = document.createElement("canvas");
   rimCanvas.width = w;
   rimCanvas.height = h;
@@ -69,14 +78,16 @@ function getOrGenerateLayers(
 
   const l = lightOpacity / 100;
 
-  // Restored 1:1 rim intensity (20% top / 16.8% bottom at 40% light; 50% top / 42% bottom at 100% light)
-  const primaryRimMax = Math.min(1, l * 0.5);
-  const bounceRimMax = Math.min(1, l * 0.42);
+  // 1:1 rim intensity (20% top / 16.8% bottom at 40% light; 50% top / 42% bottom at 100% light)
+  const primaryRimMax = Math.min(1, l * 0.7); // 0.5
+  const bounceRimMax = Math.min(1, l * 0.42); // 0.42
 
-  // Inner bevel darkening & brightening scaled proportionally with lightOpacity
-  // (~3.8% at 40% light, ~9.5% at 100% light — matches White & Gray Figma reference columns)
-  const topDarkenMax = Math.min(1, l * 0.095);
-  const bottomBrightenMax = Math.min(1, l * 0.055);
+  // Subtractive (plus-darker) & Additive (plus-lighter) peak intensities:
+  // Under plus-darker, 0.095 subtracts 9.5% directly from the background RGB:
+  // - White (100%) -> 90.5% (subtle light gray shadow)
+  // - Dark photo rooftop (~8%) -> max(0, 8% - 9.5%) = 0% (pitch black at the top lip!)
+  const topDarkenMax = Math.min(1, l * 0.55);
+  const bottomBrightenMax = Math.min(1, l * 0.045);
 
   const sdRoundedBox = (px: number, py: number, cornerR: number) => {
     const qx = Math.abs(px) - (rx - cornerR);
@@ -133,10 +144,9 @@ function getOrGenerateLayers(
       dispData[idx + 2] = 128;
       dispData[idx + 3] = 255;
 
-      // --- B. Fixed-Distance Bevel Shading (Scales with lightOpacity & rotates with lightAngle) ---
+      // --- B. Fixed-Distance Bevel Shading (Separate plus-darker & plus-lighter) ---
       if (distFromEdge >= 0 && distFromEdge < shadeDepth) {
         const s = 1 - distFromEdge / shadeDepth;
-        // Smooth quadratic-cubic falloff inward from the edge
         const profile = Math.pow(s, 1.95);
 
         const sgx =
@@ -147,23 +157,24 @@ function getOrGenerateLayers(
         const shadeDot = (sgx / slen) * lx + (sgy / slen) * ly;
 
         if (shadeDot > 0) {
-          const dir = Math.pow(shadeDot, 2.0);
-          const alpha = topDarkenMax * profile * dir;
-          shadeData[idx] = 0;
-          shadeData[idx + 1] = 0;
-          shadeData[idx + 2] = 0;
-          shadeData[idx + 3] = Math.round(alpha * 255);
+          const topProfile = Math.pow(s, 2.0);
+          const dir = Math.pow(shadeDot, 1.5);
+          const alpha = Math.min(1, topDarkenMax * topProfile * dir);
+          darkData[idx] = 0;
+          darkData[idx + 1] = 0;
+          darkData[idx + 2] = 0;
+          darkData[idx + 3] = Math.round(alpha * 255);
         } else if (shadeDot < 0) {
           const dir = Math.pow(-shadeDot, 2.0);
           const alpha = bottomBrightenMax * profile * dir;
-          shadeData[idx] = 255;
-          shadeData[idx + 1] = 255;
-          shadeData[idx + 2] = 255;
-          shadeData[idx + 3] = Math.round(alpha * 255);
+          brightData[idx] = 255;
+          brightData[idx + 1] = 255;
+          brightData[idx + 2] = 255;
+          brightData[idx + 3] = Math.round(alpha * 255);
         }
       }
 
-      // --- C. 1px Surface-Normal Specular Rim (Scales with lightOpacity & rotates with lightAngle) ---
+      // --- C. 1px Surface-Normal Specular Rim ---
       if (distFromEdge >= -1 && distFromEdge <= 2.5) {
         const primary = Math.pow(Math.max(0, dot), 2.2) * primaryRimMax;
         const bounce = Math.pow(Math.max(0, -dot), 2.2) * bounceRimMax;
@@ -178,12 +189,14 @@ function getOrGenerateLayers(
   }
 
   dispCtx.putImageData(dispImg, 0, 0);
-  shadeCtx.putImageData(shadeImg, 0, 0);
+  darkCtx.putImageData(darkImg, 0, 0);
+  brightCtx.putImageData(brightImg, 0, 0);
   rimCtx.putImageData(rimImg, 0, 0);
 
   const result: CachedLayers = {
     displacementUrl: dispCanvas.toDataURL(),
-    shadingUrl: shadeCanvas.toDataURL(),
+    darkenUrl: darkCanvas.toDataURL(),
+    brightenUrl: brightCanvas.toDataURL(),
     rimUrl: rimCanvas.toDataURL(),
   };
   layerCache.set(key, result);
@@ -219,7 +232,8 @@ export function LiquidGlass({
   const filterId = `lg-${rawId.replace(/:/g, "")}-${SHADER_VERSION}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
-  const shadeRef = useRef<HTMLDivElement>(null);
+  const darkRef = useRef<HTMLDivElement>(null);
+  const brightRef = useRef<HTMLDivElement>(null);
   const rimRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<SVGFilterElement>(null);
   const feImageRef = useRef<SVGFEImageElement>(null);
@@ -227,11 +241,20 @@ export function LiquidGlass({
   useEffect(() => {
     const container = containerRef.current;
     const el = glassRef.current;
-    const shadeEl = shadeRef.current;
+    const darkEl = darkRef.current;
+    const brightEl = brightRef.current;
     const rimEl = rimRef.current;
     const filterEl = filterRef.current;
     const feImage = feImageRef.current;
-    if (!container || !el || !shadeEl || !rimEl || !filterEl || !feImage)
+    if (
+      !container ||
+      !el ||
+      !darkEl ||
+      !brightEl ||
+      !rimEl ||
+      !filterEl ||
+      !feImage
+    )
       return;
 
     let lastW = 0;
@@ -267,15 +290,16 @@ export function LiquidGlass({
 
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        const { displacementUrl, shadingUrl, rimUrl } = getOrGenerateLayers(
-          w,
-          h,
-          computedRadius,
-          depth,
-          splay,
-          lightAngle,
-          lightOpacity,
-        );
+        const { displacementUrl, darkenUrl, brightenUrl, rimUrl } =
+          getOrGenerateLayers(
+            w,
+            h,
+            computedRadius,
+            depth,
+            splay,
+            lightAngle,
+            lightOpacity,
+          );
 
         filterEl.setAttribute("width", String(w));
         filterEl.setAttribute("height", String(h));
@@ -291,7 +315,8 @@ export function LiquidGlass({
         el.style.backdropFilter = `url(#${filterId})`;
         el.style.setProperty("-webkit-backdrop-filter", `url(#${filterId})`);
 
-        shadeEl.style.backgroundImage = `url(${shadingUrl})`;
+        darkEl.style.backgroundImage = `url(${darkenUrl})`;
+        brightEl.style.backgroundImage = `url(${brightenUrl})`;
         rimEl.style.backgroundImage = `url(${rimUrl})`;
       });
     });
@@ -411,13 +436,21 @@ export function LiquidGlass({
         }}
       />
 
-      {/* 2. Surface-Normal Bevel Shading (Scales with lightOpacity & rotates with lightAngle) */}
+      {/* 2A. Top Subtractive Darkening (Inline mixBlendMode: "plus-darker") */}
       <div
-        ref={shadeRef}
+        ref={darkRef}
         className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
+        style={{ mixBlendMode: "plus-darker" }}
       />
 
-      {/* 3. Surface-Normal Specular Rim (Scales with lightOpacity & rotates with lightAngle) */}
+      {/* 2B. Bottom Additive Brightening (Inline mixBlendMode: "plus-lighter") */}
+      <div
+        ref={brightRef}
+        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
+        style={{ mixBlendMode: "plus-lighter" }}
+      />
+
+      {/* 3. Surface-Normal Specular Rim */}
       <div
         ref={rimRef}
         className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
