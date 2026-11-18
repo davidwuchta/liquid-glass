@@ -25,7 +25,7 @@ export default function Home() {
           lightAngle={0}
           lightOpacity={40}
           radius={48}
-          className="w-64 h-64"
+          className="w-64 h-128"
         />
       </div>
     </main>

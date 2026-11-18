@@ -2,106 +2,65 @@
 
 import React, { useEffect, useId, useRef } from "react";
 
-const SHADER_VERSION = 9;
-const mapCache = new Map<string, string>();
+const SHADER_VERSION = 13;
 
-function getOrGenerateMap(
+interface CachedLayers {
+  displacementUrl: string;
+  shadingUrl: string;
+  rimUrl: string;
+}
+
+const layerCache = new Map<string, CachedLayers>();
+
+function getOrGenerateLayers(
   w: number,
   h: number,
   radius: number,
   depth: number,
   splay: number,
-): string {
-  const key = `${w}x${h}-${radius}-${depth}-${splay}-v${SHADER_VERSION}`;
-  if (mapCache.has(key)) return mapCache.get(key)!;
+  lightAngle: number,
+  lightOpacity: number,
+): CachedLayers {
+  const key = `${w}x${h}-${radius}-${depth}-${splay}-${lightAngle}-${lightOpacity}-v${SHADER_VERSION}`;
+  if (layerCache.has(key)) return layerCache.get(key)!;
 
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d")!;
-  const imgData = ctx.createImageData(w, h);
-  const data = imgData.data;
+  // 1. Displacement Map Canvas
+  const dispCanvas = document.createElement("canvas");
+  dispCanvas.width = w;
+  dispCanvas.height = h;
+  const dispCtx = dispCanvas.getContext("2d")!;
+  const dispImg = dispCtx.createImageData(w, h);
+  const dispData = dispImg.data;
+
+  // 2. Bevel Shading Canvas (Scales with lightOpacity & rotates with lightAngle)
+  const shadeCanvas = document.createElement("canvas");
+  shadeCanvas.width = w;
+  shadeCanvas.height = h;
+  const shadeCtx = shadeCanvas.getContext("2d")!;
+  const shadeImg = shadeCtx.createImageData(w, h);
+  const shadeData = shadeImg.data;
+
+  // 3. 1px Surface-Normal Specular Rim Canvas (Scales with lightOpacity & rotates with lightAngle)
+  const rimCanvas = document.createElement("canvas");
+  rimCanvas.width = w;
+  rimCanvas.height = h;
+  const rimCtx = rimCanvas.getContext("2d")!;
+  const rimImg = rimCtx.createImageData(w, h);
+  const rimData = rimImg.data;
 
   const rx = w / 2;
   const ry = h / 2;
   const r = Math.min(radius, rx, ry);
   const bevel = Math.max(1, depth);
 
+  // Smooth corner taper for the inner shading band even on small border radii
+  const rShade = Math.min(Math.max(r, bevel * 1.25), rx, ry);
+
   // Controls how sharply the refraction ramps up toward the outer lip (Figma Splay: 20)
   const splayExp = 1.85 + ((100 - splay) / 100) * 0.75;
 
-  const sdRoundedBox = (px: number, py: number) => {
-    const qx = Math.abs(px) - (rx - r);
-    const qy = Math.abs(py) - (ry - r);
-    return (
-      Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) +
-      Math.min(Math.max(qx, qy), 0) -
-      r
-    );
-  };
-
-  for (let y = 0; y < h; y++) {
-    const py = y - ry;
-    for (let x = 0; x < w; x++) {
-      const px = x - rx;
-      const d = sdRoundedBox(px, py);
-      const distFromEdge = -d;
-
-      let nx = 0;
-      let ny = 0;
-
-      if (distFromEdge < bevel) {
-        const clampedDist = Math.max(0, distFromEdge);
-        const t = 1 - clampedDist / bevel;
-        const mag = Math.pow(t, splayExp);
-
-        const gx = sdRoundedBox(px + 1, py) - sdRoundedBox(px - 1, py);
-        const gy = sdRoundedBox(px, py + 1) - sdRoundedBox(px, py - 1);
-        const len = Math.hypot(gx, gy) || 1;
-        const normX = gx / len;
-        const normY = gy / len;
-
-        nx = -normX * mag;
-        ny = -normY * mag;
-      }
-
-      const idx = (y * w + x) * 4;
-      data[idx] = Math.round(Math.min(255, Math.max(0, 128 + nx * 127)));
-      data[idx + 1] = Math.round(Math.min(255, Math.max(0, 128 + ny * 127)));
-      data[idx + 2] = 128;
-      data[idx + 3] = 255;
-    }
-  }
-
-  ctx.putImageData(imgData, 0, 0);
-  const dataUrl = canvas.toDataURL();
-  mapCache.set(key, dataUrl);
-  return dataUrl;
-}
-
-// Surface-normal-based rim generator: spans 100% of flat edges and falls off only inside the corner radius
-const rimCache = new Map<string, string>();
-
-function getOrGenerateRim(
-  w: number,
-  h: number,
-  radius: number,
-  lightAngle: number,
-  lightOpacity: number,
-): string {
-  const key = `${w}x${h}-${radius}-${lightAngle}-${lightOpacity}-rim-v${SHADER_VERSION}`;
-  if (rimCache.has(key)) return rimCache.get(key)!;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d")!;
-  const imgData = ctx.createImageData(w, h);
-  const data = imgData.data;
-
-  const rx = w / 2;
-  const ry = h / 2;
-  const r = Math.min(radius, rx, ry);
+  // Fixed pixel reach inward from the lip
+  const shadeDepth = Math.max(24, depth * 1.35);
 
   // Convert Figma lightAngle (0deg = top-down vertical light vector) to unit vector (lx, ly)
   const rad = ((lightAngle - 90) * Math.PI) / 180;
@@ -109,54 +68,126 @@ function getOrGenerateRim(
   const ly = Math.sin(rad);
 
   const l = lightOpacity / 100;
-  const primaryMax = Math.min(1, l * 0.5);
-  const bounceMax = Math.min(1, l * 0.38);
 
-  const sdRoundedBox = (px: number, py: number) => {
-    const qx = Math.abs(px) - (rx - r);
-    const qy = Math.abs(py) - (ry - r);
+  // Restored 1:1 rim intensity (20% top / 16.8% bottom at 40% light; 50% top / 42% bottom at 100% light)
+  const primaryRimMax = Math.min(1, l * 0.5);
+  const bounceRimMax = Math.min(1, l * 0.42);
+
+  // Inner bevel darkening & brightening scaled proportionally with lightOpacity
+  // (~3.8% at 40% light, ~9.5% at 100% light — matches White & Gray Figma reference columns)
+  const topDarkenMax = Math.min(1, l * 0.095);
+  const bottomBrightenMax = Math.min(1, l * 0.055);
+
+  const sdRoundedBox = (px: number, py: number, cornerR: number) => {
+    const qx = Math.abs(px) - (rx - cornerR);
+    const qy = Math.abs(py) - (ry - cornerR);
     return (
       Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) +
       Math.min(Math.max(qx, qy), 0) -
-      r
+      cornerR
     );
   };
+
+  const maxComputeDist = Math.max(bevel, shadeDepth, 3);
 
   for (let y = 0; y < h; y++) {
     const py = y - ry;
     for (let x = 0; x < w; x++) {
       const px = x - rx;
-      const d = sdRoundedBox(px, py);
+      const d = sdRoundedBox(px, py, r);
       const distFromEdge = -d;
 
-      // Only compute within the outer 2.5px border band so the rest of the image stays empty
+      const idx = (y * w + x) * 4;
+
+      if (distFromEdge >= maxComputeDist) {
+        dispData[idx] = 128;
+        dispData[idx + 1] = 128;
+        dispData[idx + 2] = 128;
+        dispData[idx + 3] = 255;
+        continue;
+      }
+
+      // Outward surface normal for exact box geometry
+      const gx = sdRoundedBox(px + 1, py, r) - sdRoundedBox(px - 1, py, r);
+      const gy = sdRoundedBox(px, py + 1, r) - sdRoundedBox(px, py - 1, r);
+      const len = Math.hypot(gx, gy) || 1;
+      const normX = gx / len;
+      const normY = gy / len;
+
+      const dot = normX * lx + normY * ly;
+
+      // --- A. Displacement Map ---
+      let nx = 0;
+      let ny = 0;
+      if (distFromEdge < bevel) {
+        const clampedDist = Math.max(0, distFromEdge);
+        const t = 1 - clampedDist / bevel;
+        const mag = Math.pow(t, splayExp);
+        nx = -normX * mag;
+        ny = -normY * mag;
+      }
+      dispData[idx] = Math.round(Math.min(255, Math.max(0, 128 + nx * 127)));
+      dispData[idx + 1] = Math.round(
+        Math.min(255, Math.max(0, 128 + ny * 127)),
+      );
+      dispData[idx + 2] = 128;
+      dispData[idx + 3] = 255;
+
+      // --- B. Fixed-Distance Bevel Shading (Scales with lightOpacity & rotates with lightAngle) ---
+      if (distFromEdge >= 0 && distFromEdge < shadeDepth) {
+        const s = 1 - distFromEdge / shadeDepth;
+        // Smooth quadratic-cubic falloff inward from the edge
+        const profile = Math.pow(s, 1.95);
+
+        const sgx =
+          sdRoundedBox(px + 1, py, rShade) - sdRoundedBox(px - 1, py, rShade);
+        const sgy =
+          sdRoundedBox(px, py + 1, rShade) - sdRoundedBox(px, py - 1, rShade);
+        const slen = Math.hypot(sgx, sgy) || 1;
+        const shadeDot = (sgx / slen) * lx + (sgy / slen) * ly;
+
+        if (shadeDot > 0) {
+          const dir = Math.pow(shadeDot, 2.0);
+          const alpha = topDarkenMax * profile * dir;
+          shadeData[idx] = 0;
+          shadeData[idx + 1] = 0;
+          shadeData[idx + 2] = 0;
+          shadeData[idx + 3] = Math.round(alpha * 255);
+        } else if (shadeDot < 0) {
+          const dir = Math.pow(-shadeDot, 2.0);
+          const alpha = bottomBrightenMax * profile * dir;
+          shadeData[idx] = 255;
+          shadeData[idx + 1] = 255;
+          shadeData[idx + 2] = 255;
+          shadeData[idx + 3] = Math.round(alpha * 255);
+        }
+      }
+
+      // --- C. 1px Surface-Normal Specular Rim (Scales with lightOpacity & rotates with lightAngle) ---
       if (distFromEdge >= -1 && distFromEdge <= 2.5) {
-        const gx = sdRoundedBox(px + 1, py) - sdRoundedBox(px - 1, py);
-        const gy = sdRoundedBox(px, py + 1) - sdRoundedBox(px, py - 1);
-        const len = Math.hypot(gx, gy) || 1;
-        const normX = gx / len;
-        const normY = gy / len;
+        const primary = Math.pow(Math.max(0, dot), 2.2) * primaryRimMax;
+        const bounce = Math.pow(Math.max(0, -dot), 2.2) * bounceRimMax;
+        const rimAlpha = Math.min(1, primary + bounce);
 
-        // Dot product between outward border normal and light direction
-        // Constant along the entire straight edge; falls off smoothly only inside the corner arcs!
-        const dot = normX * lx + normY * ly;
-        const primary = Math.pow(Math.max(0, dot), 2.2) * primaryMax;
-        const bounce = Math.pow(Math.max(0, -dot), 2.2) * bounceMax;
-        const alpha = Math.min(1, primary + bounce);
-
-        const idx = (y * w + x) * 4;
-        data[idx] = 255;
-        data[idx + 1] = 255;
-        data[idx + 2] = 255;
-        data[idx + 3] = Math.round(alpha * 255);
+        rimData[idx] = 255;
+        rimData[idx + 1] = 255;
+        rimData[idx + 2] = 255;
+        rimData[idx + 3] = Math.round(rimAlpha * 255);
       }
     }
   }
 
-  ctx.putImageData(imgData, 0, 0);
-  const dataUrl = canvas.toDataURL();
-  rimCache.set(key, dataUrl);
-  return dataUrl;
+  dispCtx.putImageData(dispImg, 0, 0);
+  shadeCtx.putImageData(shadeImg, 0, 0);
+  rimCtx.putImageData(rimImg, 0, 0);
+
+  const result: CachedLayers = {
+    displacementUrl: dispCanvas.toDataURL(),
+    shadingUrl: shadeCanvas.toDataURL(),
+    rimUrl: rimCanvas.toDataURL(),
+  };
+  layerCache.set(key, result);
+  return result;
 }
 
 interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -188,6 +219,7 @@ export function LiquidGlass({
   const filterId = `lg-${rawId.replace(/:/g, "")}-${SHADER_VERSION}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
+  const shadeRef = useRef<HTMLDivElement>(null);
   const rimRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<SVGFilterElement>(null);
   const feImageRef = useRef<SVGFEImageElement>(null);
@@ -195,10 +227,12 @@ export function LiquidGlass({
   useEffect(() => {
     const container = containerRef.current;
     const el = glassRef.current;
+    const shadeEl = shadeRef.current;
     const rimEl = rimRef.current;
     const filterEl = filterRef.current;
     const feImage = feImageRef.current;
-    if (!container || !el || !rimEl || !filterEl || !feImage) return;
+    if (!container || !el || !shadeEl || !rimEl || !filterEl || !feImage)
+      return;
 
     let lastW = 0;
     let lastH = 0;
@@ -233,17 +267,12 @@ export function LiquidGlass({
 
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        const displacementUrl = getOrGenerateMap(
+        const { displacementUrl, shadingUrl, rimUrl } = getOrGenerateLayers(
           w,
           h,
           computedRadius,
           depth,
           splay,
-        );
-        const rimUrl = getOrGenerateRim(
-          w,
-          h,
-          computedRadius,
           lightAngle,
           lightOpacity,
         );
@@ -262,6 +291,7 @@ export function LiquidGlass({
         el.style.backdropFilter = `url(#${filterId})`;
         el.style.setProperty("-webkit-backdrop-filter", `url(#${filterId})`);
 
+        shadeEl.style.backgroundImage = `url(${shadingUrl})`;
         rimEl.style.backgroundImage = `url(${rimUrl})`;
       });
     });
@@ -381,16 +411,13 @@ export function LiquidGlass({
         }}
       />
 
-      {/* 2. Directional Tonal Shading */}
+      {/* 2. Surface-Normal Bevel Shading (Scales with lightOpacity & rotates with lightAngle) */}
       <div
-        className="pointer-events-none absolute inset-0 rounded-[inherit]"
-        style={{
-          background: `linear-gradient(${lightAngle + 180}deg, rgba(0, 0, 0, 0.14) 0%, rgba(0, 0, 0, 0.02) 35%, rgba(255, 255, 255, 0.02) 100%)`,
-          boxShadow: "inset 0px 20px 24px -16px rgba(0, 0, 0, 0.18)",
-        }}
+        ref={shadeRef}
+        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
       />
 
-      {/* 3. Surface-Normal Specular Rim (Spans 100% of flat edges on any box size + falls off inside corner arcs + supports any 360deg lightAngle) */}
+      {/* 3. Surface-Normal Specular Rim (Scales with lightOpacity & rotates with lightAngle) */}
       <div
         ref={rimRef}
         className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
