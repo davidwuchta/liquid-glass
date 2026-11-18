@@ -1,0 +1,562 @@
+﻿=== FILE: C:\Dev\Webdevelopment\liquid-glass\eslint.config.mjs ===
+
+import { defineConfig, globalIgnores } from "eslint/config";
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTs from "eslint-config-next/typescript";
+
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  // Override default ignores of eslint-config-next.
+  globalIgnores([
+    // Default ignores of eslint-config-next:
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+  ]),
+]);
+
+export default eslintConfig;
+
+
+
+=== FILE: C:\Dev\Webdevelopment\liquid-glass\next-env.d.ts ===
+
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+import "./.next/dev/types/routes.d.ts";
+import "./.next/dev/types/root-params.d.ts";
+
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+
+
+
+=== FILE: C:\Dev\Webdevelopment\liquid-glass\next.config.ts ===
+
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  /* config options here */
+  cacheComponents: true,
+  partialPrefetching: true,
+  reactCompiler: true,
+  turbopack: {
+    rules: {
+      "*.css": {
+        loaders: ["@tailwindcss/turbopack"],
+        as: "*.css",
+      },
+    },
+  },
+};
+
+export default nextConfig;
+
+
+
+=== FILE: C:\Dev\Webdevelopment\liquid-glass\package.json ===
+
+{
+  "name": "liquid-glass",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "next": "16.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "4.3.3",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "^5"
+  }
+}
+
+
+
+=== FILE: C:\Dev\Webdevelopment\liquid-glass\tsconfig.json ===
+
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}
+
+
+
+=== FILE: C:\Dev\Webdevelopment\liquid-glass\src\app\globals.css ===
+
+@import "tailwindcss";
+
+
+
+=== FILE: C:\Dev\Webdevelopment\liquid-glass\src\app\layout.tsx ===
+
+import type { Metadata } from "next";
+import localFont from "next/font/local";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "Liquid Glass",
+  description: "Test to recreate Liquid Glass inside the browser",
+};
+
+const interFont = localFont({
+  src: "../assets/fonts/inter-variable.ttf",
+  variable: "--font-inter",
+  display: "swap",
+});
+
+export default function RootLayout({ children }: LayoutProps<"/">) {
+  return (
+    <html
+      lang="en"
+      className={`${interFont.variable} ${interFont.className} antialiased bg-black`}
+    >
+      <body>{children}</body>
+    </html>
+  );
+}
+
+
+
+=== FILE: C:\Dev\Webdevelopment\liquid-glass\src\app\page.tsx ===
+
+import Image from "next/image";
+import { LiquidGlass } from "@/components/LiquidGlass";
+
+import ImgHomeBg from "@/assets/images/img-home-bg.png";
+
+export default function Home() {
+  return (
+    <main className="relative w-full h-screen flex items-center justify-center text-white text-4xl font-bold overflow-hidden">
+      <div className="absolute inset-0">
+        <Image
+          src={ImgHomeBg}
+          alt="Home Background"
+          loading="eager"
+          fill
+          className="object-cover"
+        />
+      </div>
+      <div>
+        <LiquidGlass
+          refraction={70}
+          depth={30}
+          dispersion={20}
+          frost={6}
+          splay={20}
+          lightAngle={0}
+          lightOpacity={40}
+          radius={48}
+          className="w-64 h-64"
+        />
+      </div>
+    </main>
+  );
+}
+
+
+
+=== FILE: C:\Dev\Webdevelopment\liquid-glass\src\components\LiquidGlass.tsx ===
+
+"use client";
+
+import React, { useEffect, useId, useRef } from "react";
+
+interface CachedMaps {
+  displacementUrl: string;
+  specularUrl: string;
+}
+
+const mapCache = new Map<string, CachedMaps>();
+
+function getOrGenerateMaps(
+  w: number,
+  h: number,
+  radius: number,
+  depth: number,
+  splay: number,
+  lightAngle: number,
+  lightOpacity: number,
+): CachedMaps {
+  const key = `${w}x${h}-${radius}-${depth}-${splay}-${lightAngle}-${lightOpacity}-v5`;
+  if (mapCache.has(key)) return mapCache.get(key)!;
+
+  const dispCanvas = document.createElement("canvas");
+  dispCanvas.width = w;
+  dispCanvas.height = h;
+  const dispCtx = dispCanvas.getContext("2d")!;
+  const dispImg = dispCtx.createImageData(w, h);
+  const dispData = dispImg.data;
+
+  const specCanvas = document.createElement("canvas");
+  specCanvas.width = w;
+  specCanvas.height = h;
+  const specCtx = specCanvas.getContext("2d")!;
+  const specImg = specCtx.createImageData(w, h);
+  const specData = specImg.data;
+
+  const rx = w / 2;
+  const ry = h / 2;
+  const r = Math.min(radius, rx, ry);
+  const bevel = Math.max(1, depth);
+
+  // Higher exponent keeps the inner glass flat and concentrates the lens curve near the edge (Figma Splay: 20)
+  const splayExp = Math.max(1.8, (110 - splay) / 26);
+
+  // Figma Light angle (0 deg = top/bottom catchlight with subtle diagonal bias)
+  const rad = ((lightAngle - 65) * Math.PI) / 180;
+  const lx = Math.cos(rad);
+  const ly = Math.sin(rad);
+  const maxAlpha = (lightOpacity / 100) * 255;
+
+  const sdRoundedBox = (px: number, py: number) => {
+    const qx = Math.abs(px) - (rx - r);
+    const qy = Math.abs(py) - (ry - r);
+    return (
+      Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) +
+      Math.min(Math.max(qx, qy), 0) -
+      r
+    );
+  };
+
+  for (let y = 0; y < h; y++) {
+    const py = y - ry;
+    for (let x = 0; x < w; x++) {
+      const px = x - rx;
+      const d = sdRoundedBox(px, py);
+      const distFromEdge = -d;
+
+      let nx = 0;
+      let ny = 0;
+      let specAlpha = 0;
+
+      if (distFromEdge > 0 && distFromEdge < bevel) {
+        // 0 at inner flat boundary -> 1 at outer border
+        const t = 1 - distFromEdge / bevel;
+
+        // Outward surface normal gradient
+        const gx = sdRoundedBox(px + 1, py) - sdRoundedBox(px - 1, py);
+        const gy = sdRoundedBox(px, py + 1) - sdRoundedBox(px, py - 1);
+        const len = Math.hypot(gx, gy) || 1;
+        const normX = gx / len;
+        const normY = gy / len;
+
+        // Smoothly taper displacement at the final 1.5px border so feDisplacementMap never clamps out-of-bounds
+        const borderGuard = Math.min(1, distFromEdge / 1.5);
+        const mag = Math.pow(t, splayExp) * borderGuard;
+
+        // Pulls interior blurred pixels outward toward the curved bevel lip (matches Figma's magnification curve)
+        nx = normX * mag;
+        ny = normY * mag;
+
+        // Crisp 1.25px outer rim specular catchlight only (NO wide milky inner fog)
+        const rimWidth = 1.35;
+        if (distFromEdge <= rimWidth) {
+          const rimProfile = Math.pow(1 - distFromEdge / rimWidth, 1.4);
+          // Bipolar reflection so both top-left and bottom-right curves catch the light like Figma
+          const dot = normX * lx + normY * ly;
+          const primaryLight = Math.pow(Math.max(0, dot), 1.4);
+          const oppositeBounce = Math.pow(Math.max(0, -dot), 1.6) * 0.65;
+          const dirFactor = 0.08 + 0.92 * (primaryLight + oppositeBounce);
+
+          specAlpha = Math.min(255, maxAlpha * rimProfile * dirFactor * 0.85);
+        }
+      }
+
+      const idx = (y * w + x) * 4;
+
+      dispData[idx] = Math.round(Math.min(255, Math.max(0, 128 + nx * 127)));
+      dispData[idx + 1] = Math.round(
+        Math.min(255, Math.max(0, 128 + ny * 127)),
+      );
+      dispData[idx + 2] = 128;
+      dispData[idx + 3] = 255;
+
+      specData[idx] = 255;
+      specData[idx + 1] = 255;
+      specData[idx + 2] = 255;
+      specData[idx + 3] = Math.round(specAlpha);
+    }
+  }
+
+  dispCtx.putImageData(dispImg, 0, 0);
+  specCtx.putImageData(specImg, 0, 0);
+
+  const result = {
+    displacementUrl: dispCanvas.toDataURL(),
+    specularUrl: specCanvas.toDataURL(),
+  };
+  mapCache.set(key, result);
+  return result;
+}
+
+interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
+  refraction?: number; // Figma: 70
+  depth?: number; // Figma: 30
+  dispersion?: number; // Figma: 20
+  frost?: number; // Figma: 6
+  splay?: number; // Figma: 20
+  lightAngle?: number; // Figma: 0
+  lightOpacity?: number; // Figma: 40
+  radius?: number; // Optional px override (or use Tailwind rounded-* classes)
+}
+
+export function LiquidGlass({
+  refraction = 70,
+  depth = 30,
+  dispersion = 20,
+  frost = 6,
+  splay = 20,
+  lightAngle = 0,
+  lightOpacity = 40,
+  radius,
+  className = "",
+  children,
+  style,
+  ...props
+}: LiquidGlassProps) {
+  const rawId = useId();
+  const filterId = `lg-${rawId.replace(/:/g, "")}`;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const glassRef = useRef<HTMLDivElement>(null);
+  const specRef = useRef<HTMLDivElement>(null);
+  const filterRef = useRef<SVGFilterElement>(null);
+  const feImageRef = useRef<SVGFEImageElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const el = glassRef.current;
+    const specEl = specRef.current;
+    const filterEl = filterRef.current;
+    const feImage = feImageRef.current;
+    if (!container || !el || !specEl || !filterEl || !feImage) return;
+
+    let lastW = 0;
+    let lastH = 0;
+    let lastR = -1;
+    let rafId = 0;
+
+    const observer = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect.width);
+      const h = Math.round(entry.contentRect.height);
+      const computedRadius =
+        radius ??
+        (parseFloat(getComputedStyle(container).borderTopLeftRadius) || 23);
+
+      if (
+        w <= 0 ||
+        h <= 0 ||
+        (w === lastW && h === lastH && computedRadius === lastR)
+      ) {
+        return;
+      }
+      lastW = w;
+      lastH = h;
+      lastR = computedRadius;
+
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const { displacementUrl, specularUrl } = getOrGenerateMaps(
+          w,
+          h,
+          computedRadius,
+          depth,
+          splay,
+          lightAngle,
+          lightOpacity,
+        );
+
+        filterEl.setAttribute("width", String(w));
+        filterEl.setAttribute("height", String(h));
+        feImage.setAttribute("width", String(w));
+        feImage.setAttribute("height", String(h));
+        feImage.setAttribute("href", displacementUrl);
+        feImage.setAttributeNS(
+          "http://www.w3.org/1999/xlink",
+          "xlink:href",
+          displacementUrl,
+        );
+
+        el.style.backdropFilter = `url(#${filterId})`;
+        el.style.setProperty("-webkit-backdrop-filter", `url(#${filterId})`);
+
+        specEl.style.backgroundImage = `url(${specularUrl})`;
+      });
+    });
+
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [filterId, radius, depth, splay, lightAngle, lightOpacity]);
+
+  // Calibrated so maximum displacement never exceeds the inner bevel depth
+  const baseScale = (refraction / 100) * 34;
+  const chromaOffset = (dispersion / 100) * 7;
+  const scaleR = (baseScale - chromaOffset).toFixed(2);
+  const scaleG = baseScale.toFixed(2);
+  const scaleB = (baseScale + chromaOffset).toFixed(2);
+  const stdDev = (frost * 0.5).toFixed(2);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        ...(radius !== undefined ? { borderRadius: `${radius}px` } : {}),
+        ...style,
+      }}
+      className={`relative ${radius === undefined ? "rounded-[23px]" : ""} ${className}`}
+      {...props}
+    >
+      <svg
+        width="0"
+        height="0"
+        className="pointer-events-none absolute left-0 top-0 overflow-visible"
+        aria-hidden="true"
+      >
+        <defs>
+          <filter
+            ref={filterRef}
+            id={filterId}
+            x="0"
+            y="0"
+            width="256"
+            height="256"
+            filterUnits="userSpaceOnUse"
+            primitiveUnits="userSpaceOnUse"
+            colorInterpolationFilters="sRGB"
+          >
+            {/* 1. Blur first so the refraction lens warps soft gradients cleanly */}
+            <feGaussianBlur
+              in="SourceGraphic"
+              stdDeviation={stdDev}
+              edgeMode="duplicate"
+              result="blurred"
+            />
+            <feImage
+              ref={feImageRef}
+              x="0"
+              y="0"
+              width="256"
+              height="256"
+              preserveAspectRatio="none"
+              result="dispMap"
+            />
+            <feDisplacementMap
+              in="blurred"
+              in2="dispMap"
+              scale={scaleR}
+              xChannelSelector="R"
+              yChannelSelector="G"
+              result="dispR"
+            />
+            <feColorMatrix
+              in="dispR"
+              type="matrix"
+              values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
+              result="r"
+            />
+            <feDisplacementMap
+              in="blurred"
+              in2="dispMap"
+              scale={scaleG}
+              xChannelSelector="R"
+              yChannelSelector="G"
+              result="dispG"
+            />
+            <feColorMatrix
+              in="dispG"
+              type="matrix"
+              values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
+              result="g"
+            />
+            <feDisplacementMap
+              in="blurred"
+              in2="dispMap"
+              scale={scaleB}
+              xChannelSelector="R"
+              yChannelSelector="G"
+              result="dispB"
+            />
+            <feColorMatrix
+              in="dispB"
+              type="matrix"
+              values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
+              result="b"
+            />
+            <feBlend in="r" in2="g" mode="screen" result="rg" />
+            <feBlend in="rg" in2="b" mode="screen" result="rgb" />
+          </filter>
+        </defs>
+      </svg>
+
+      {/* Pure Glass Backdrop Layer */}
+      <div
+        ref={glassRef}
+        className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
+        style={{
+          backdropFilter: `blur(${frost}px)`,
+          WebkitBackdropFilter: `blur(${frost}px)`,
+        }}
+      />
+
+      {/* Crisp Outer Rim Specular Highlight (Matches Figma Light: 0 deg, 40%) */}
+      <div
+        ref={specRef}
+        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center mix-blend-screen"
+      />
+
+      {/* Content Slot */}
+      <div className="relative z-10 h-full w-full">{children}</div>
+    </div>
+  );
+}
+
+
+
