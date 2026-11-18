@@ -2,7 +2,7 @@
 
 import React, { useEffect, useId, useRef } from "react";
 
-const SHADER_VERSION = 15;
+const SHADER_VERSION = 21;
 
 interface CachedLayers {
   displacementUrl: string;
@@ -41,7 +41,7 @@ function getOrGenerateLayers(
   const darkImg = darkCtx.createImageData(w, h);
   const darkData = darkImg.data;
 
-  // 2B. Bottom Brightening Canvas (White pixels with alpha -> adds brightness via plus-lighter)
+  // 2B. Additive Brightening Canvas (Bottom Glass Bevel + Inner Shadow 1 via plus-lighter)
   const brightCanvas = document.createElement("canvas");
   brightCanvas.width = w;
   brightCanvas.height = h;
@@ -71,6 +71,13 @@ function getOrGenerateLayers(
   // Fixed pixel reach inward from the lip
   const shadeDepth = Math.max(24, depth * 1.35);
 
+  // --- TWEAK INNER SHADOW 1 HERE (Figma: X: 0, Y: 40, Blur: 10, Spread: -40, #282828 100%, Plus lighter) ---
+  // #282828 is rgb(40,40,40) -> 40 / 255 = 0.157 peak additive lift at the top edge,
+  // softening inward over ~16px (Figma Blur: 10 Gaussian tail) without thickening the 1px rim
+  const is1Depth = 8; // How many pixels downward from the top edge the soft glow reaches
+  const is1Peak = 0.08; // Peak brightness (#282828 after Gaussian spread choke; increase/decrease to taste)
+  const is1Falloff = 2.2; // Smoothness of the gradient falloff downward (lower = fuller, higher = tighter)
+
   // Convert Figma lightAngle (0deg = top-down vertical light vector) to unit vector (lx, ly)
   const rad = ((lightAngle - 90) * Math.PI) / 180;
   const lx = Math.cos(rad);
@@ -78,14 +85,11 @@ function getOrGenerateLayers(
 
   const l = lightOpacity / 100;
 
-  // 1:1 rim intensity (20% top / 16.8% bottom at 40% light; 50% top / 42% bottom at 100% light)
-  const primaryRimMax = Math.min(1, l * 0.7); // 0.5
-  const bounceRimMax = Math.min(1, l * 0.42); // 0.42
+  // 1:1 rim intensity
+  const primaryRimMax = Math.min(1, l * 0.7);
+  const bounceRimMax = Math.min(1, l * 0.42);
 
-  // Subtractive (plus-darker) & Additive (plus-lighter) peak intensities:
-  // Under plus-darker, 0.095 subtracts 9.5% directly from the background RGB:
-  // - White (100%) -> 90.5% (subtle light gray shadow)
-  // - Dark photo rooftop (~8%) -> max(0, 8% - 9.5%) = 0% (pitch black at the top lip!)
+  // Subtractive (plus-darker) & Additive (plus-lighter) peak intensities from your v20:
   const topDarkenMax = Math.min(1, l * 0.55);
   const bottomBrightenMax = Math.min(1, l * 0.045);
 
@@ -99,7 +103,7 @@ function getOrGenerateLayers(
     );
   };
 
-  const maxComputeDist = Math.max(bevel, shadeDepth, 3);
+  const maxComputeDist = Math.max(bevel, shadeDepth, is1Depth, 3);
 
   for (let y = 0; y < h; y++) {
     const py = y - ry;
@@ -144,7 +148,9 @@ function getOrGenerateLayers(
       dispData[idx + 2] = 128;
       dispData[idx + 3] = 255;
 
-      // --- B. Fixed-Distance Bevel Shading (Separate plus-darker & plus-lighter) ---
+      // --- B. Fixed-Distance Bevel Shading + Inner Shadow 1 ---
+      let addAlpha = 0;
+
       if (distFromEdge >= 0 && distFromEdge < shadeDepth) {
         const s = 1 - distFromEdge / shadeDepth;
         const profile = Math.pow(s, 1.95);
@@ -166,12 +172,28 @@ function getOrGenerateLayers(
           darkData[idx + 3] = Math.round(alpha * 255);
         } else if (shadeDot < 0) {
           const dir = Math.pow(-shadeDot, 2.0);
-          const alpha = bottomBrightenMax * profile * dir;
-          brightData[idx] = 255;
-          brightData[idx + 1] = 255;
-          brightData[idx + 2] = 255;
-          brightData[idx + 3] = Math.round(alpha * 255);
+          addAlpha += bottomBrightenMax * profile * dir;
         }
+
+        // Inner Shadow 1 (X: 0, Y: 40, Blur: 10, Spread: -40, #282828, Plus lighter)
+        const topVerticalDot = -(sgy / slen); // +1 at top edge, tapers smoothly around top corners
+        if (topVerticalDot > 0 && distFromEdge < is1Depth) {
+          // Starts 1px below the outer border so it sits *underneath* the 1px rim highlight
+          const innerT = Math.max(
+            0,
+            1 - Math.max(0, distFromEdge - 1) / is1Depth,
+          );
+          const is1Profile = Math.pow(innerT, is1Falloff);
+          const is1Dir = Math.pow(topVerticalDot, 1.8);
+          addAlpha += is1Peak * is1Profile * is1Dir;
+        }
+      }
+
+      if (addAlpha > 0) {
+        brightData[idx] = 255;
+        brightData[idx + 1] = 255;
+        brightData[idx + 2] = 255;
+        brightData[idx + 3] = Math.round(Math.min(1, addAlpha) * 255);
       }
 
       // --- C. 1px Surface-Normal Specular Rim ---
@@ -443,7 +465,7 @@ export function LiquidGlass({
         style={{ mixBlendMode: "plus-darker" }}
       />
 
-      {/* 2B. Bottom Additive Brightening (Inline mixBlendMode: "plus-lighter") */}
+      {/* 2B. Additive Brightening + Inner Shadow 1 (Inline mixBlendMode: "plus-lighter") */}
       <div
         ref={brightRef}
         className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
