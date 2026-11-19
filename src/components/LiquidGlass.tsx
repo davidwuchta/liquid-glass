@@ -2,7 +2,7 @@
 
 import React, { useEffect, useId, useRef } from "react";
 
-const SHADER_VERSION = 21;
+const SHADER_VERSION = 24;
 
 interface CachedLayers {
   displacementUrl: string;
@@ -33,15 +33,17 @@ function getOrGenerateLayers(
   const dispImg = dispCtx.createImageData(w, h);
   const dispData = dispImg.data;
 
-  // 2A. Top Darkening Canvas (Black pixels with alpha -> subtracts brightness via plus-darker)
+  // 2A. True Plus-Darker Map for SVG feComposite (k2=1, k3=1, k4=-1)
+  // Neutral = opaque white (255, 255, 255, 255) -> Bg + 1 - 1 = Bg
   const darkCanvas = document.createElement("canvas");
   darkCanvas.width = w;
   darkCanvas.height = h;
   const darkCtx = darkCanvas.getContext("2d")!;
   const darkImg = darkCtx.createImageData(w, h);
   const darkData = darkImg.data;
+  darkData.fill(255);
 
-  // 2B. Additive Brightening Canvas (Bottom Glass Bevel + Inner Shadow 1 via plus-lighter)
+  // 2B. Additive Brightening Canvas (Bottom Glass Bevel + Inner Shadows 1 & 2 via plus-lighter)
   const brightCanvas = document.createElement("canvas");
   brightCanvas.width = w;
   brightCanvas.height = h;
@@ -62,21 +64,20 @@ function getOrGenerateLayers(
   const r = Math.min(radius, rx, ry);
   const bevel = Math.max(1, depth);
 
-  // Smooth corner taper for the inner shading band even on small border radii
   const rShade = Math.min(Math.max(r, bevel * 1.25), rx, ry);
-
-  // Controls how sharply the refraction ramps up toward the outer lip (Figma Splay: 20)
   const splayExp = 1.85 + ((100 - splay) / 100) * 0.75;
-
-  // Fixed pixel reach inward from the lip
   const shadeDepth = Math.max(24, depth * 1.35);
 
-  // --- TWEAK INNER SHADOW 1 HERE (Figma: X: 0, Y: 40, Blur: 10, Spread: -40, #282828 100%, Plus lighter) ---
-  // #282828 is rgb(40,40,40) -> 40 / 255 = 0.157 peak additive lift at the top edge,
-  // softening inward over ~16px (Figma Blur: 10 Gaussian tail) without thickening the 1px rim
-  const is1Depth = 8; // How many pixels downward from the top edge the soft glow reaches
-  const is1Peak = 0.08; // Peak brightness (#282828 after Gaussian spread choke; increase/decrease to taste)
-  const is1Falloff = 2.2; // Smoothness of the gradient falloff downward (lower = fuller, higher = tighter)
+  // --- TWEAK INNER SHADOWS 1 & 2 (Top + Bottom, Plus lighter) ---
+  const is1Depth = 8;
+  const is1Peak = 0.08;
+  const is1Falloff = 2.2;
+
+  // --- TWEAK INNER SHADOW 3 (Top only: X: 0, Y: 40, Blur: 30, Spread: -40, #E6E6E6 100%, Plus darker) ---
+  // Under true plus-darker, #E6E6E6 subtracts ~0.098 max (~0.05-0.06 after spread choke)
+  const is3Depth = 28;
+  const is3Peak = 0.015;
+  const is3Falloff = 1.9;
 
   // Convert Figma lightAngle (0deg = top-down vertical light vector) to unit vector (lx, ly)
   const rad = ((lightAngle - 90) * Math.PI) / 180;
@@ -89,8 +90,8 @@ function getOrGenerateLayers(
   const primaryRimMax = Math.min(1, l * 0.7);
   const bounceRimMax = Math.min(1, l * 0.42);
 
-  // Subtractive (plus-darker) & Additive (plus-lighter) peak intensities from your v20:
-  const topDarkenMax = Math.min(1, l * 0.55);
+  // Recalibrated for TRUE subtractive plus-darker (0.12 = 12% brightness subtracted at 100% light)
+  const topDarkenMax = Math.min(1, l * 0.12);
   const bottomBrightenMax = Math.min(1, l * 0.045);
 
   const sdRoundedBox = (px: number, py: number, cornerR: number) => {
@@ -103,7 +104,8 @@ function getOrGenerateLayers(
     );
   };
 
-  const maxComputeDist = Math.max(bevel, shadeDepth, is1Depth, 3);
+  const maxShadeDist = Math.max(shadeDepth, is1Depth, is3Depth);
+  const maxComputeDist = Math.max(bevel, maxShadeDist, 3);
 
   for (let y = 0; y < h; y++) {
     const py = y - ry;
@@ -148,13 +150,11 @@ function getOrGenerateLayers(
       dispData[idx + 2] = 128;
       dispData[idx + 3] = 255;
 
-      // --- B. Fixed-Distance Bevel Shading + Inner Shadow 1 ---
+      // --- B. Fixed-Distance Bevel Shading + Inner Shadows 1, 2 & 3 ---
+      let darkSub = 0;
       let addAlpha = 0;
 
-      if (distFromEdge >= 0 && distFromEdge < shadeDepth) {
-        const s = 1 - distFromEdge / shadeDepth;
-        const profile = Math.pow(s, 1.95);
-
+      if (distFromEdge >= 0 && distFromEdge < maxShadeDist) {
         const sgx =
           sdRoundedBox(px + 1, py, rShade) - sdRoundedBox(px - 1, py, rShade);
         const sgy =
@@ -162,31 +162,53 @@ function getOrGenerateLayers(
         const slen = Math.hypot(sgx, sgy) || 1;
         const shadeDot = (sgx / slen) * lx + (sgy / slen) * ly;
 
-        if (shadeDot > 0) {
-          const topProfile = Math.pow(s, 2.0);
-          const dir = Math.pow(shadeDot, 1.5);
-          const alpha = Math.min(1, topDarkenMax * topProfile * dir);
-          darkData[idx] = 0;
-          darkData[idx + 1] = 0;
-          darkData[idx + 2] = 0;
-          darkData[idx + 3] = Math.round(alpha * 255);
-        } else if (shadeDot < 0) {
-          const dir = Math.pow(-shadeDot, 2.0);
-          addAlpha += bottomBrightenMax * profile * dir;
+        // Glass Bevel Darkening & Brightening (rotates with lightAngle)
+        if (distFromEdge < shadeDepth) {
+          const s = 1 - distFromEdge / shadeDepth;
+          const profile = Math.pow(s, 1.95);
+
+          if (shadeDot > 0) {
+            const topProfile = Math.pow(s, 2.0);
+            const dir = Math.pow(shadeDot, 1.5);
+            darkSub += topDarkenMax * topProfile * dir;
+          } else if (shadeDot < 0) {
+            const dir = Math.pow(-shadeDot, 2.0);
+            addAlpha += bottomBrightenMax * profile * dir;
+          }
         }
 
-        // Inner Shadow 1 (X: 0, Y: 40, Blur: 10, Spread: -40, #282828, Plus lighter)
-        const topVerticalDot = -(sgy / slen); // +1 at top edge, tapers smoothly around top corners
-        if (topVerticalDot > 0 && distFromEdge < is1Depth) {
-          // Starts 1px below the outer border so it sits *underneath* the 1px rim highlight
+        // Inner Shadows 1 & 2 (Top + Bottom, Plus lighter)
+        const verticalDot = Math.abs(sgy / slen);
+        if (verticalDot > 0 && distFromEdge < is1Depth) {
           const innerT = Math.max(
             0,
             1 - Math.max(0, distFromEdge - 1) / is1Depth,
           );
           const is1Profile = Math.pow(innerT, is1Falloff);
-          const is1Dir = Math.pow(topVerticalDot, 1.8);
+          const is1Dir = Math.pow(verticalDot, 1.8);
           addAlpha += is1Peak * is1Profile * is1Dir;
         }
+
+        // Inner Shadow 3 (Top only: #E6E6E6, Plus darker)
+        const topVerticalDot = -(sgy / slen);
+        if (topVerticalDot > 0 && distFromEdge < is3Depth) {
+          const innerT3 = Math.max(
+            0,
+            1 - Math.max(0, distFromEdge - 1) / is3Depth,
+          );
+          const is3Profile = Math.pow(innerT3, is3Falloff);
+          const is3Dir = Math.pow(topVerticalDot, 1.8);
+          darkSub += is3Peak * is3Profile * is3Dir;
+        }
+      }
+
+      if (darkSub > 0) {
+        // Encode subtraction as opaque (1 - darkSub) so feComposite (Bg + Fg - 1) computes Bg - darkSub
+        const val = Math.round(Math.max(0, 1 - darkSub) * 255);
+        darkData[idx] = val;
+        darkData[idx + 1] = val;
+        darkData[idx + 2] = val;
+        darkData[idx + 3] = 255;
       }
 
       if (addAlpha > 0) {
@@ -254,28 +276,28 @@ export function LiquidGlass({
   const filterId = `lg-${rawId.replace(/:/g, "")}-${SHADER_VERSION}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const glassRef = useRef<HTMLDivElement>(null);
-  const darkRef = useRef<HTMLDivElement>(null);
   const brightRef = useRef<HTMLDivElement>(null);
   const rimRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<SVGFilterElement>(null);
   const feImageRef = useRef<SVGFEImageElement>(null);
+  const feDarkImageRef = useRef<SVGFEImageElement>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     const el = glassRef.current;
-    const darkEl = darkRef.current;
     const brightEl = brightRef.current;
     const rimEl = rimRef.current;
     const filterEl = filterRef.current;
     const feImage = feImageRef.current;
+    const feDarkImage = feDarkImageRef.current;
     if (
       !container ||
       !el ||
-      !darkEl ||
       !brightEl ||
       !rimEl ||
       !filterEl ||
-      !feImage
+      !feImage ||
+      !feDarkImage
     )
       return;
 
@@ -325,6 +347,7 @@ export function LiquidGlass({
 
         filterEl.setAttribute("width", String(w));
         filterEl.setAttribute("height", String(h));
+
         feImage.setAttribute("width", String(w));
         feImage.setAttribute("height", String(h));
         feImage.setAttribute("href", displacementUrl);
@@ -334,10 +357,18 @@ export function LiquidGlass({
           displacementUrl,
         );
 
+        feDarkImage.setAttribute("width", String(w));
+        feDarkImage.setAttribute("height", String(h));
+        feDarkImage.setAttribute("href", darkenUrl);
+        feDarkImage.setAttributeNS(
+          "http://www.w3.org/1999/xlink",
+          "xlink:href",
+          darkenUrl,
+        );
+
         el.style.backdropFilter = `url(#${filterId})`;
         el.style.setProperty("-webkit-backdrop-filter", `url(#${filterId})`);
 
-        darkEl.style.backgroundImage = `url(${darkenUrl})`;
         brightEl.style.backgroundImage = `url(${brightenUrl})`;
         rimEl.style.backgroundImage = `url(${rimUrl})`;
       });
@@ -444,11 +475,32 @@ export function LiquidGlass({
             />
             <feBlend in="r" in2="g" mode="screen" result="rg" />
             <feBlend in="rg" in2="b" mode="screen" result="rgb" />
+
+            {/* True cross-browser Plus-Darker (Linear Burn): max(0, Bg + Fg - 1) */}
+            <feImage
+              ref={feDarkImageRef}
+              x="0"
+              y="0"
+              width="256"
+              height="256"
+              preserveAspectRatio="none"
+              result="darkMap"
+            />
+            <feComposite
+              in="rgb"
+              in2="darkMap"
+              operator="arithmetic"
+              k1="0"
+              k2="1"
+              k3="1"
+              k4="-1"
+              result="darkened"
+            />
           </filter>
         </defs>
       </svg>
 
-      {/* 1. Glass Backdrop Layer */}
+      {/* 1. Glass Backdrop + True GPU Plus-Darker Pass (Top Bevel + Inner Shadow 3) */}
       <div
         ref={glassRef}
         className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
@@ -458,14 +510,7 @@ export function LiquidGlass({
         }}
       />
 
-      {/* 2A. Top Subtractive Darkening (Inline mixBlendMode: "plus-darker") */}
-      <div
-        ref={darkRef}
-        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
-        style={{ mixBlendMode: "plus-darker" }}
-      />
-
-      {/* 2B. Additive Brightening + Inner Shadow 1 (Inline mixBlendMode: "plus-lighter") */}
+      {/* 2. Additive Brightening + Inner Shadows 1 & 2 (mixBlendMode: "plus-lighter") */}
       <div
         ref={brightRef}
         className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
