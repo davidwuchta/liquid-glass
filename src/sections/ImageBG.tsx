@@ -2,7 +2,7 @@ import Image from "next/image";
 import { Draggable } from "@/components/Draggable";
 import { LiquidGlass } from "@/components/LiquidGlass";
 
-import ImgHomeBg from "@/assets/images/img-home-bg-04.jpg";
+import ImgHomeBg from "@/assets/images/img-home-bg-06.jpg";
 
 export const ImageBG = () => {
   return (
@@ -54,7 +54,7 @@ export const ImageBG = () => {
               contentClassName="flex items-center justify-center"
             >
               <p>
-                Thu <span className="text-red-500">1°</span> Nov
+                Fri <span className="text-red-500">20</span> Nov
               </p>
             </LiquidGlass>
           </Draggable>
