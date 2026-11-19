@@ -1,14 +1,87 @@
 "use client";
 
-import React, { useEffect, useId, useRef } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 
-const SHADER_VERSION = 27;
+const GLASS_CONFIG = {
+  cache: {
+    maxEntries: 24,
+  },
+  defaults: {
+    refraction: 70,
+    depth: 30,
+    dispersion: 20,
+    frost: 6,
+    splay: 20,
+    lightAngle: 0,
+    lightOpacity: 40,
+    radius: 23,
+  },
+  refraction: {
+    baseScaleFactor: 68,
+    chromaOffsetFactor: 14,
+    frostStdDevFactor: 0.35,
+    fallbackBlurFactor: 0.5,
+    dispMapBlurStdDev: 1.5,
+    normalEps: 0.25,
+    shoulderThreshold: 0.8,
+  },
+  bevel: {
+    shadeRadiusFactor: 1.25,
+    shadeDepthMin: 24,
+    shadeDepthFactor: 1.35,
+    topDarkenScale: 0.12,
+    topProfileExp: 2.0,
+    topDirExp: 1.5,
+    bottomBrightenScale: 0.045,
+    bottomProfileExp: 1.95,
+    bottomDirExp: 2.0,
+  },
+  innerShadowLight: {
+    // Inner Shadows 1 & 2 (Top + Bottom, Plus lighter)
+    depth: 8,
+    peak: 0.08,
+    falloff: 2.2,
+    dirExp: 1.8,
+  },
+  innerShadowDark: {
+    // Inner Shadow 3 (Top only: #E6E6E6, Plus darker)
+    depth: 28,
+    peak: 0.025,
+    falloff: 1.9,
+    dirExp: 1.8,
+  },
+  rim: {
+    primaryScale: 0.7,
+    bounceScale: 0.42,
+    exp: 2.2,
+    widthPx: 1,
+  },
+  dropShadow: {
+    // DS 1 & 2: x: ±1.25, y: 0, blur: 0, spread: -0.75 (#D0D0D0, Plus darker)
+    sidesWidthPx: 1,
+    sidesSub: 0.092,
+    // DS 3: x: 0, y: 0, blur: 0, spread: 0.5 (#CCCCCC, Plus darker)
+    allWidthPx: 1,
+    allSub: 0.1,
+    // DS 4: x: 0, y: 8, blur: 15, spread: 0 (#000000 2%, Normal)
+    ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)",
+  },
+  fill: {
+    // #808080 4%, Luminosity
+    color: "rgba(128, 128, 128, 0.04)",
+  },
+} as const;
 
 interface CachedLayers {
   displacementUrl: string;
   darkenUrl: string;
   brightenUrl: string;
   rimUrl: string;
+}
+
+interface LayerState extends CachedLayers {
+  w: number;
+  h: number;
 }
 
 const layerCache = new Map<string, CachedLayers>();
@@ -22,8 +95,21 @@ function getOrGenerateLayers(
   lightAngle: number,
   lightOpacity: number,
 ): CachedLayers {
-  const key = `${w}x${h}-${radius}-${depth}-${splay}-${lightAngle}-${lightOpacity}-v${SHADER_VERSION}`;
-  if (layerCache.has(key)) return layerCache.get(key)!;
+  const key = `${w}x${h}-${radius}-${depth}-${splay}-${lightAngle}-${lightOpacity}`;
+  const cached = layerCache.get(key);
+  if (cached) {
+    layerCache.delete(key);
+    layerCache.set(key, cached);
+    return cached;
+  }
+
+  const {
+    refraction: refCfg,
+    bevel: bevelCfg,
+    innerShadowLight: isLightCfg,
+    innerShadowDark: isDarkCfg,
+    rim: rimCfg,
+  } = GLASS_CONFIG;
 
   // 1. Displacement Map Canvas
   const dispCanvas = document.createElement("canvas");
@@ -63,31 +149,30 @@ function getOrGenerateLayers(
   const r = Math.min(radius, rx, ry);
   const bevel = Math.max(1, depth);
 
-  const rShade = Math.min(Math.max(r, bevel * 1.25), rx, ry);
+  const rShade = Math.min(
+    Math.max(r, bevel * bevelCfg.shadeRadiusFactor),
+    rx,
+    ry,
+  );
   const splayExp = 1.85 + ((100 - splay) / 100) * 0.75;
-  const shadeDepth = Math.max(24, depth * 1.35);
-
-  // --- INNER SHADOWS 1 & 2 (Top + Bottom, Plus lighter) ---
-  const is1Depth = 8;
-  const is1Peak = 0.08;
-  const is1Falloff = 2.2;
-
-  // --- INNER SHADOW 3 (Top only: #E6E6E6, Plus darker) ---
-  const is3Depth = 28;
-  const is3Peak = 0.025;
-  const is3Falloff = 1.9;
+  const shadeDepth = Math.max(
+    bevelCfg.shadeDepthMin,
+    depth * bevelCfg.shadeDepthFactor,
+  );
 
   const rad = ((lightAngle - 90) * Math.PI) / 180;
   const lx = Math.cos(rad);
   const ly = Math.sin(rad);
 
   const l = lightOpacity / 100;
+  const primaryRimMax = Math.min(1, l * rimCfg.primaryScale);
+  const bounceRimMax = Math.min(1, l * rimCfg.bounceScale);
+  const topDarkenMax = Math.min(1, l * bevelCfg.topDarkenScale);
+  const bottomBrightenMax = Math.min(1, l * bevelCfg.bottomBrightenScale);
 
-  const primaryRimMax = Math.min(1, l * 0.7);
-  const bounceRimMax = Math.min(1, l * 0.42);
-
-  const topDarkenMax = Math.min(1, l * 0.12);
-  const bottomBrightenMax = Math.min(1, l * 0.045);
+  const shoulderT = refCfg.shoulderThreshold;
+  const shoulderSpan = 1 - shoulderT;
+  const shoulderNorm = shoulderT + shoulderSpan * 0.5;
 
   // Deterministic Interleaved Gradient Noise in [0, 1) to eliminate 8-bit quantization banding
   const ign = (x: number, y: number) => {
@@ -105,7 +190,7 @@ function getOrGenerateLayers(
     );
   };
 
-  const maxShadeDist = Math.max(shadeDepth, is1Depth, is3Depth);
+  const maxShadeDist = Math.max(shadeDepth, isLightCfg.depth, isDarkCfg.depth);
   const maxComputeDist = Math.max(bevel, maxShadeDist, 3);
 
   for (let y = 0; y < h; y++) {
@@ -125,7 +210,7 @@ function getOrGenerateLayers(
         continue;
       }
 
-      const eps = 0.25;
+      const eps = refCfg.normalEps;
       const gx = sdRoundedBox(px + eps, py, r) - sdRoundedBox(px - eps, py, r);
       const gy = sdRoundedBox(px, py + eps, r) - sdRoundedBox(px, py - eps, r);
       const len = Math.hypot(gx, gy) || 1;
@@ -134,16 +219,16 @@ function getOrGenerateLayers(
 
       const dot = normX * lx + normY * ly;
 
-      // --- A. Displacement Map (no dither noise; C1 shoulder prevents corner UV fold-over) ---
+      // --- A. Displacement Map (C1 shoulder prevents corner UV fold-over) ---
       if (distFromEdge < bevel) {
         const clampedDist = Math.max(0, distFromEdge);
         const t = 1 - clampedDist / bevel;
         let tSoft: number;
-        if (t < 0.8) {
-          tSoft = t / 0.9;
+        if (t < shoulderT) {
+          tSoft = t / shoulderNorm;
         } else {
-          const u = (t - 0.8) / 0.2;
-          tSoft = (0.8 + 0.2 * (u - 0.5 * u * u)) / 0.9;
+          const u = (t - shoulderT) / shoulderSpan;
+          tSoft = (shoulderT + shoulderSpan * (u - 0.5 * u * u)) / shoulderNorm;
         }
         const mag = Math.pow(tSoft, splayExp);
         const nx = -normX * mag;
@@ -173,40 +258,40 @@ function getOrGenerateLayers(
 
         if (distFromEdge < shadeDepth) {
           const s = 1 - distFromEdge / shadeDepth;
-          const profile = Math.pow(s, 1.95);
 
           if (shadeDot > 0) {
-            const topProfile = Math.pow(s, 2.0);
-            const dir = Math.pow(shadeDot, 1.5);
+            const topProfile = Math.pow(s, bevelCfg.topProfileExp);
+            const dir = Math.pow(shadeDot, bevelCfg.topDirExp);
             darkSub += topDarkenMax * topProfile * dir;
           } else if (shadeDot < 0) {
-            const dir = Math.pow(-shadeDot, 2.0);
-            addAlpha += bottomBrightenMax * profile * dir;
+            const bottomProfile = Math.pow(s, bevelCfg.bottomProfileExp);
+            const dir = Math.pow(-shadeDot, bevelCfg.bottomDirExp);
+            addAlpha += bottomBrightenMax * bottomProfile * dir;
           }
         }
 
         // Inner Shadows 1 & 2 (Top + Bottom, Plus lighter)
         const verticalDot = Math.abs(sgy / slen);
-        if (verticalDot > 0 && distFromEdge < is1Depth) {
+        if (verticalDot > 0 && distFromEdge < isLightCfg.depth) {
           const innerT = Math.max(
             0,
-            1 - Math.max(0, distFromEdge - 1) / is1Depth,
+            1 - Math.max(0, distFromEdge - 1) / isLightCfg.depth,
           );
-          const is1Profile = Math.pow(innerT, is1Falloff);
-          const is1Dir = Math.pow(verticalDot, 1.8);
-          addAlpha += is1Peak * is1Profile * is1Dir;
+          const profile = Math.pow(innerT, isLightCfg.falloff);
+          const dir = Math.pow(verticalDot, isLightCfg.dirExp);
+          addAlpha += isLightCfg.peak * profile * dir;
         }
 
         // Inner Shadow 3 (Top only: #E6E6E6, Plus darker)
         const topVerticalDot = -(sgy / slen);
-        if (topVerticalDot > 0 && distFromEdge < is3Depth) {
+        if (topVerticalDot > 0 && distFromEdge < isDarkCfg.depth) {
           const innerT3 = Math.max(
             0,
-            1 - Math.max(0, distFromEdge - 1) / is3Depth,
+            1 - Math.max(0, distFromEdge - 1) / isDarkCfg.depth,
           );
-          const is3Profile = Math.pow(innerT3, is3Falloff);
-          const is3Dir = Math.pow(topVerticalDot, 1.8);
-          darkSub += is3Peak * is3Profile * is3Dir;
+          const profile = Math.pow(innerT3, isDarkCfg.falloff);
+          const dir = Math.pow(topVerticalDot, isDarkCfg.dirExp);
+          darkSub += isDarkCfg.peak * profile * dir;
         }
       }
 
@@ -233,8 +318,8 @@ function getOrGenerateLayers(
 
       // --- C. 1px Surface-Normal Specular Rim ---
       if (distFromEdge >= -1 && distFromEdge <= 2.5) {
-        const primary = Math.pow(Math.max(0, dot), 2.2) * primaryRimMax;
-        const bounce = Math.pow(Math.max(0, -dot), 2.2) * bounceRimMax;
+        const primary = Math.pow(Math.max(0, dot), rimCfg.exp) * primaryRimMax;
+        const bounce = Math.pow(Math.max(0, -dot), rimCfg.exp) * bounceRimMax;
         const rimAlpha = Math.min(1, primary + bounce);
 
         rimData[idx] = 255;
@@ -256,29 +341,36 @@ function getOrGenerateLayers(
     brightenUrl: brightCanvas.toDataURL(),
     rimUrl: rimCanvas.toDataURL(),
   };
+
+  if (layerCache.size >= GLASS_CONFIG.cache.maxEntries) {
+    const oldestKey = layerCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      layerCache.delete(oldestKey);
+    }
+  }
   layerCache.set(key, result);
   return result;
 }
 
 interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
-  refraction?: number; // Figma: 70
-  depth?: number; // Figma: 30
-  dispersion?: number; // Figma: 20
-  frost?: number; // Figma: 6
-  splay?: number; // Figma: 20
-  lightAngle?: number; // Figma: 0
-  lightOpacity?: number; // Figma: 40
-  radius?: number; // Figma: 23 (or use Tailwind rounded-* classes)
+  refraction?: number;
+  depth?: number;
+  dispersion?: number;
+  frost?: number;
+  splay?: number;
+  lightAngle?: number;
+  lightOpacity?: number;
+  radius?: number;
 }
 
 export function LiquidGlass({
-  refraction = 70,
-  depth = 30,
-  dispersion = 20,
-  frost = 6,
-  splay = 20,
-  lightAngle = 0,
-  lightOpacity = 40,
+  refraction = GLASS_CONFIG.defaults.refraction,
+  depth = GLASS_CONFIG.defaults.depth,
+  dispersion = GLASS_CONFIG.defaults.dispersion,
+  frost = GLASS_CONFIG.defaults.frost,
+  splay = GLASS_CONFIG.defaults.splay,
+  lightAngle = GLASS_CONFIG.defaults.lightAngle,
+  lightOpacity = GLASS_CONFIG.defaults.lightOpacity,
   radius,
   className = "",
   children,
@@ -287,145 +379,90 @@ export function LiquidGlass({
 }: LiquidGlassProps) {
   const rawId = useId();
   const cleanId = rawId.replace(/:/g, "");
-  const filterId = `lg-${cleanId}-${SHADER_VERSION}`;
-  const dsSidesFilterId = `lg-ds-sides-${cleanId}-${SHADER_VERSION}`;
-  const dsAllFilterId = `lg-ds-all-${cleanId}-${SHADER_VERSION}`;
+  const dsSidesFilterId = `lg-ds-sides-${cleanId}`;
+  const dsAllFilterId = `lg-ds-all-${cleanId}`;
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const glassRef = useRef<HTMLDivElement>(null);
-  const brightRef = useRef<HTMLDivElement>(null);
-  const rimRef = useRef<HTMLDivElement>(null);
-  const filterRef = useRef<SVGFilterElement>(null);
-  const feImageRef = useRef<SVGFEImageElement>(null);
-  const feDarkImageRef = useRef<SVGFEImageElement>(null);
+  const [layers, setLayers] = useState<LayerState | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
-    const el = glassRef.current;
-    const brightEl = brightRef.current;
-    const rimEl = rimRef.current;
-    const filterEl = filterRef.current;
-    const feImage = feImageRef.current;
-    const feDarkImage = feDarkImageRef.current;
-    if (
-      !container ||
-      !el ||
-      !brightEl ||
-      !rimEl ||
-      !filterEl ||
-      !feImage ||
-      !feDarkImage
-    )
-      return;
+    if (!container) return;
 
     let lastW = 0;
     let lastH = 0;
     let lastR = -1;
-    let lastAngle = NaN;
-    let lastOpacity = NaN;
     let rafId = 0;
 
-    const observer = new ResizeObserver(([entry]) => {
-      const w = Math.round(entry.contentRect.width);
-      const h = Math.round(entry.contentRect.height);
+    const observer = new ResizeObserver(() => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
       const computedRadius =
         radius ??
-        (parseFloat(getComputedStyle(container).borderTopLeftRadius) || 23);
+        (parseFloat(getComputedStyle(container).borderTopLeftRadius) ||
+          GLASS_CONFIG.defaults.radius);
 
       if (
         w <= 0 ||
         h <= 0 ||
-        (w === lastW &&
-          h === lastH &&
-          computedRadius === lastR &&
-          lightAngle === lastAngle &&
-          lightOpacity === lastOpacity)
+        (w === lastW && h === lastH && computedRadius === lastR)
       ) {
         return;
       }
       lastW = w;
       lastH = h;
       lastR = computedRadius;
-      lastAngle = lightAngle;
-      lastOpacity = lightOpacity;
 
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        const { displacementUrl, darkenUrl, brightenUrl, rimUrl } =
-          getOrGenerateLayers(
-            w,
-            h,
-            computedRadius,
-            depth,
-            splay,
-            lightAngle,
-            lightOpacity,
-          );
-
-        filterEl.setAttribute("width", String(w));
-        filterEl.setAttribute("height", String(h));
-
-        feImage.setAttribute("width", String(w));
-        feImage.setAttribute("height", String(h));
-        feImage.setAttribute("href", displacementUrl);
-        feImage.setAttributeNS(
-          "http://www.w3.org/1999/xlink",
-          "xlink:href",
-          displacementUrl,
+        const generated = getOrGenerateLayers(
+          w,
+          h,
+          computedRadius,
+          depth,
+          splay,
+          lightAngle,
+          lightOpacity,
         );
-
-        feDarkImage.setAttribute("width", String(w));
-        feDarkImage.setAttribute("height", String(h));
-        feDarkImage.setAttribute("href", darkenUrl);
-        feDarkImage.setAttributeNS(
-          "http://www.w3.org/1999/xlink",
-          "xlink:href",
-          darkenUrl,
-        );
-
-        el.style.backdropFilter = `url(#${filterId})`;
-        el.style.setProperty("-webkit-backdrop-filter", `url(#${filterId})`);
-
-        brightEl.style.backgroundImage = `url(${brightenUrl})`;
-        rimEl.style.backgroundImage = `url(${rimUrl})`;
+        setLayers({ w, h, ...generated });
       });
     });
 
-    observer.observe(el);
+    observer.observe(container);
     return () => {
       observer.disconnect();
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [filterId, radius, depth, splay, lightAngle, lightOpacity]);
+  }, [radius, depth, splay, lightAngle, lightOpacity]);
 
-  const baseScale = (refraction / 100) * 68;
-  const chromaOffset = (dispersion / 100) * 14;
+  const {
+    refraction: refCfg,
+    dropShadow: dsCfg,
+    rim: rimCfg,
+    fill: fillCfg,
+  } = GLASS_CONFIG;
+
+  const activeFilterId = `lg-${cleanId}-${layers?.w ?? 0}x${layers?.h ?? 0}-${radius ?? "css"}-${depth}-${splay}-${lightAngle}-${lightOpacity}`;
+  const glassBackdrop = layers
+    ? `url(#${activeFilterId})`
+    : `blur(${frost * refCfg.fallbackBlurFactor}px)`;
+
+  const baseScale = (refraction / 100) * refCfg.baseScaleFactor;
+  const chromaOffset = (dispersion / 100) * refCfg.chromaOffsetFactor;
   const scaleR = (baseScale - chromaOffset).toFixed(2);
   const scaleG = baseScale.toFixed(2);
   const scaleB = (baseScale + chromaOffset).toFixed(2);
-  const stdDev = (frost * 0.35).toFixed(2);
-
-  // --- TWEAK DROP SHADOWS HERE ---
-  // DS 1 & 2: x: ±1.25, y: 0, blur: 0, spread: -0.75 -> 1px left & right edges at half #D0D0D0 strength
-  const ds12Width = 1;
-  const ds12Sub = 0.092;
-
-  // DS 3: x: 0, y: 0, blur: 0, spread: 0.5 -> 1px all around at half #CCCCCC strength
-  const ds3Width = 1;
-  const ds3Sub = 0.1;
-
-  // DS 4: x: 0, y: 8, blur: 15, spread: 0, #000000 2%, normal
-  const ds4Shadow = "0px 8px 15px 0px rgba(0, 0, 0, 0.02)";
+  const stdDev = (frost * refCfg.frostStdDevFactor).toFixed(2);
 
   return (
     <div
       ref={containerRef}
       style={{
+        ...style,
         ...(radius !== undefined ? { borderRadius: `${radius}px` } : {}),
         boxShadow: style?.boxShadow
-          ? `${ds4Shadow}, ${style.boxShadow}`
-          : ds4Shadow,
-        ...style,
+          ? `${dsCfg.ambient}, ${style.boxShadow}`
+          : dsCfg.ambient,
       }}
       className={`relative ${radius === undefined ? "rounded-[23px]" : ""} ${className}`}
       {...props}
@@ -439,12 +476,11 @@ export function LiquidGlass({
         <defs>
           {/* Main Glass Refraction + Chromatic Dispersion + Interior Plus-Darker Filter */}
           <filter
-            ref={filterRef}
-            id={filterId}
+            id={activeFilterId}
             x="0"
             y="0"
-            width="256"
-            height="256"
+            width={layers?.w ?? 256}
+            height={layers?.h ?? 256}
             filterUnits="userSpaceOnUse"
             primitiveUnits="userSpaceOnUse"
             colorInterpolationFilters="sRGB"
@@ -456,17 +492,17 @@ export function LiquidGlass({
               result="blurred"
             />
             <feImage
-              ref={feImageRef}
               x="0"
               y="0"
-              width="256"
-              height="256"
+              width={layers?.w ?? 256}
+              height={layers?.h ?? 256}
+              href={layers?.displacementUrl}
               preserveAspectRatio="none"
               result="dispMapRaw"
             />
             <feGaussianBlur
               in="dispMapRaw"
-              stdDeviation="2.0"
+              stdDeviation={refCfg.dispMapBlurStdDev}
               edgeMode="duplicate"
               result="dispMap"
             />
@@ -516,11 +552,11 @@ export function LiquidGlass({
             <feBlend in="rg" in2="b" mode="screen" result="rgb" />
 
             <feImage
-              ref={feDarkImageRef}
               x="0"
               y="0"
-              width="256"
-              height="256"
+              width={layers?.w ?? 256}
+              height={layers?.h ?? 256}
+              href={layers?.darkenUrl}
               preserveAspectRatio="none"
               result="darkMap"
             />
@@ -536,34 +572,34 @@ export function LiquidGlass({
             />
           </filter>
 
-          {/* Drop Shadow 3: True Plus-Darker (#CCCCCC -> subtract 0.20) */}
+          {/* Drop Shadow 3: True Plus-Darker (#CCCCCC) */}
           <filter id={dsAllFilterId} colorInterpolationFilters="sRGB">
             <feComponentTransfer>
-              <feFuncR type="linear" slope="1" intercept={-ds3Sub} />
-              <feFuncG type="linear" slope="1" intercept={-ds3Sub} />
-              <feFuncB type="linear" slope="1" intercept={-ds3Sub} />
+              <feFuncR type="linear" slope="1" intercept={-dsCfg.allSub} />
+              <feFuncG type="linear" slope="1" intercept={-dsCfg.allSub} />
+              <feFuncB type="linear" slope="1" intercept={-dsCfg.allSub} />
             </feComponentTransfer>
           </filter>
 
-          {/* Drop Shadows 1 & 2: True Plus-Darker (#D0D0D0 -> subtract 0.184) */}
+          {/* Drop Shadows 1 & 2: True Plus-Darker (#D0D0D0) */}
           <filter id={dsSidesFilterId} colorInterpolationFilters="sRGB">
             <feComponentTransfer>
-              <feFuncR type="linear" slope="1" intercept={-ds12Sub} />
-              <feFuncG type="linear" slope="1" intercept={-ds12Sub} />
-              <feFuncB type="linear" slope="1" intercept={-ds12Sub} />
+              <feFuncR type="linear" slope="1" intercept={-dsCfg.sidesSub} />
+              <feFuncG type="linear" slope="1" intercept={-dsCfg.sidesSub} />
+              <feFuncB type="linear" slope="1" intercept={-dsCfg.sidesSub} />
             </feComponentTransfer>
           </filter>
         </defs>
       </svg>
 
-      {/* 0A. Drop Shadow 3 (x:0 y:0 blur:0 spread:0.5 #CCCCCC Plus darker) */}
+      {/* 0A. Drop Shadow 3 (All-around outer ring) */}
       <div
         className="pointer-events-none absolute rounded-[inherit]"
         style={{
-          inset: `-${ds3Width}px`,
-          padding: `${ds3Width}px`,
+          inset: `-${dsCfg.allWidthPx}px`,
+          padding: `${dsCfg.allWidthPx}px`,
           ...(radius !== undefined
-            ? { borderRadius: `${radius + ds3Width}px` }
+            ? { borderRadius: `${radius + dsCfg.allWidthPx}px` }
             : {}),
           backdropFilter: `url(#${dsAllFilterId})`,
           WebkitBackdropFilter: `url(#${dsAllFilterId})`,
@@ -574,17 +610,17 @@ export function LiquidGlass({
         }}
       />
 
-      {/* 0B. Drop Shadows 1 & 2 (x:±1.25 y:0 blur:0 spread:-0.75 #D0D0D0 Plus darker) */}
+      {/* 0B. Drop Shadows 1 & 2 (Left & Right outer rings) */}
       <div
         className="pointer-events-none absolute rounded-[inherit]"
         style={{
           top: 0,
           bottom: 0,
-          left: `-${ds12Width}px`,
-          right: `-${ds12Width}px`,
-          padding: `0px ${ds12Width}px`,
+          left: `-${dsCfg.sidesWidthPx}px`,
+          right: `-${dsCfg.sidesWidthPx}px`,
+          padding: `0px ${dsCfg.sidesWidthPx}px`,
           ...(radius !== undefined
-            ? { borderRadius: `${radius + ds12Width}px` }
+            ? { borderRadius: `${radius + dsCfg.sidesWidthPx}px` }
             : {}),
           backdropFilter: `url(#${dsSidesFilterId})`,
           WebkitBackdropFilter: `url(#${dsSidesFilterId})`,
@@ -597,11 +633,10 @@ export function LiquidGlass({
 
       {/* 1. Glass Backdrop + True GPU Plus-Darker Pass (Top Bevel + Inner Shadow 3) */}
       <div
-        ref={glassRef}
         className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
         style={{
-          backdropFilter: `blur(${frost * 0.5}px)`,
-          WebkitBackdropFilter: `blur(${frost * 0.5}px)`,
+          backdropFilter: glassBackdrop,
+          WebkitBackdropFilter: glassBackdrop,
         }}
       />
 
@@ -609,24 +644,26 @@ export function LiquidGlass({
       <div
         className="pointer-events-none absolute inset-0 rounded-[inherit]"
         style={{
-          backgroundColor: "rgba(128, 128, 128, 0.04)",
+          backgroundColor: fillCfg.color,
           mixBlendMode: "luminosity",
         }}
       />
 
       {/* 2. Additive Brightening + Inner Shadows 1 & 2 (mixBlendMode: "plus-lighter") */}
       <div
-        ref={brightRef}
         className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
-        style={{ mixBlendMode: "plus-lighter" }}
+        style={{
+          mixBlendMode: "plus-lighter",
+          backgroundImage: layers ? `url(${layers.brightenUrl})` : undefined,
+        }}
       />
 
       {/* 3. Surface-Normal Specular Rim */}
       <div
-        ref={rimRef}
         className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
         style={{
-          padding: "1px",
+          padding: `${rimCfg.widthPx}px`,
+          backgroundImage: layers ? `url(${layers.rimUrl})` : undefined,
           WebkitMask:
             "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
           WebkitMaskComposite: "xor",

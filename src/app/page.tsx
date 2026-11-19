@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { LiquidGlass } from "@/components/LiquidGlass";
 
-import ImgHomeBg from "@/assets/images/img-home-bg-04.jpg";
+import ImgHomeBg from "@/assets/images/img-home-bg-01.png";
 
 export default function Home() {
   return (
@@ -16,39 +16,6 @@ export default function Home() {
         />
       </div>
       <div className="flex gap-8">
-        <LiquidGlass
-          refraction={70}
-          depth={30}
-          dispersion={20}
-          frost={6}
-          splay={20}
-          lightAngle={0}
-          lightOpacity={40}
-          radius={48}
-          className="w-64 h-64"
-        />
-        <LiquidGlass
-          refraction={70}
-          depth={30}
-          dispersion={20}
-          frost={6}
-          splay={20}
-          lightAngle={0}
-          lightOpacity={40}
-          radius={48}
-          className="w-64 h-64"
-        />
-        <LiquidGlass
-          refraction={70}
-          depth={30}
-          dispersion={20}
-          frost={6}
-          splay={20}
-          lightAngle={0}
-          lightOpacity={40}
-          radius={48}
-          className="w-64 h-64"
-        />
         <LiquidGlass
           refraction={70}
           depth={30}
