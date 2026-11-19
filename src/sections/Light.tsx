@@ -68,7 +68,8 @@ export const Light = () => {
           <Draggable>
             <LiquidGlass
               theme="light"
-              variant="clear"
+              variant="tinted"
+              tint="green"
               radius={1000}
               className="w-20 h-12"
             />
@@ -76,7 +77,8 @@ export const Light = () => {
           <Draggable>
             <LiquidGlass
               theme="light"
-              variant="clear"
+              variant="tinted"
+              tint="yellow"
               radius={1000}
               className="w-20 h-12"
             />
@@ -84,7 +86,8 @@ export const Light = () => {
           <Draggable>
             <LiquidGlass
               theme="light"
-              variant="clear"
+              variant="tinted"
+              tint="orange"
               radius={1000}
               className="w-20 h-12"
             />
@@ -92,7 +95,8 @@ export const Light = () => {
           <Draggable>
             <LiquidGlass
               theme="light"
-              variant="clear"
+              variant="tinted"
+              tint="red"
               radius={1000}
               className="w-20 h-12"
             />
@@ -100,7 +104,8 @@ export const Light = () => {
           <Draggable>
             <LiquidGlass
               theme="light"
-              variant="clear"
+              variant="tinted"
+              tint="purple"
               radius={1000}
               className="w-20 h-12"
             />
@@ -108,7 +113,8 @@ export const Light = () => {
           <Draggable>
             <LiquidGlass
               theme="light"
-              variant="clear"
+              variant="tinted"
+              tint="blue"
               radius={1000}
               className="w-20 h-12"
             />

@@ -3,11 +3,41 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 
 export type GlassTheme = "dark" | "light";
-export type GlassVariant = "clear" | "opaque";
+export type GlassVariant = "clear" | "opaque" | "tinted";
+export type GlassTintColor =
+  | "blue"
+  | "green"
+  | "yellow"
+  | "orange"
+  | "red"
+  | "purple";
+
+export const GLASS_TINT_PRESETS: Record<GlassTintColor, string> = {
+  blue: "#0088FF",
+  green: "#34C759",
+  yellow: "#FFCC00",
+  orange: "#FF8D28",
+  red: "#FF383C",
+  purple: "#CB30E0",
+};
 
 export interface GlassFill {
   color: string;
   blendMode?: React.CSSProperties["mixBlendMode"];
+}
+
+function parseHexColor(hex: string): [number, number, number] {
+  const clean = hex.replace("#", "").trim();
+  const full =
+    clean.length === 3
+      ? clean
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : clean;
+  const num = parseInt(full, 16);
+  if (Number.isNaN(num)) return [0, 136, 255];
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
 }
 
 const GLASS_CONFIG = {
@@ -17,6 +47,7 @@ const GLASS_CONFIG = {
   defaults: {
     theme: "dark" as GlassTheme,
     variant: "clear" as GlassVariant,
+    tint: "blue" as GlassTintColor,
     refraction: 70,
     depth: 30,
     dispersion: 20,
@@ -90,6 +121,7 @@ interface PresetOverride {
   splay?: number;
   lightAngle?: number;
   lightOpacity?: number;
+  backingColor?: string;
   bevel?: Partial<typeof GLASS_CONFIG.bevel>;
   innerShadowLight?: Partial<typeof GLASS_CONFIG.innerShadowLight>;
   innerShadowDark?: Partial<typeof GLASS_CONFIG.innerShadowDark>;
@@ -131,6 +163,17 @@ const GLASS_PRESETS: Record<
         { color: "rgba(26, 26, 26, 1)", blendMode: "lighten" }, // 1st: #1A1A1A 100%
       ],
     },
+    tinted: {
+      frost: 6,
+      backingColor: "#FFFFFF",
+      innerShadowLight: { peak: 0.08 },
+      dropShadow: {
+        sidesSub: 0.092, // Light Clear (#D0D0D0)
+        allSub: 0, // Disabled
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)", // Dark Clear (#000000 4%)
+      },
+      fills: [],
+    },
   },
   light: {
     clear: {
@@ -164,6 +207,17 @@ const GLASS_PRESETS: Record<
         { color: "rgba(191, 191, 191, 0.1)", blendMode: "darken" }, // 1st: #BFBFBF 10%
       ],
     },
+    tinted: {
+      frost: 6,
+      backingColor: "#FFFFFF",
+      innerShadowLight: { peak: 0.123 },
+      dropShadow: {
+        sidesSub: 0.092, // Light Clear (#D0D0D0)
+        allSub: 0, // Disabled
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)", // Light Clear (#000000 2%)
+      },
+      fills: [],
+    },
   },
 };
 
@@ -177,6 +231,7 @@ function resolvePreset(theme: GlassTheme, variant: GlassVariant) {
     splay: override.splay ?? GLASS_CONFIG.defaults.splay,
     lightAngle: override.lightAngle ?? GLASS_CONFIG.defaults.lightAngle,
     lightOpacity: override.lightOpacity ?? GLASS_CONFIG.defaults.lightOpacity,
+    backingColor: override.backingColor,
     bevel: { ...GLASS_CONFIG.bevel, ...override.bevel },
     innerShadowLight: {
       ...GLASS_CONFIG.innerShadowLight,
@@ -538,6 +593,7 @@ function getOrGenerateLayers(
 interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
   theme?: GlassTheme;
   variant?: GlassVariant;
+  tint?: GlassTintColor | (string & {});
   refraction?: number;
   depth?: number;
   dispersion?: number;
@@ -552,6 +608,7 @@ interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
 export function LiquidGlass({
   theme = GLASS_CONFIG.defaults.theme,
   variant = GLASS_CONFIG.defaults.variant,
+  tint = GLASS_CONFIG.defaults.tint,
   refraction,
   depth,
   dispersion,
@@ -575,10 +632,22 @@ export function LiquidGlass({
   const resolvedLightAngle = lightAngle ?? preset.lightAngle;
   const resolvedLightOpacity = lightOpacity ?? preset.lightOpacity;
 
+  const isTinted = variant === "tinted";
+  const tintHex = isTinted
+    ? (GLASS_TINT_PRESETS[tint as GlassTintColor] ?? tint)
+    : null;
+  const [tintR, tintG, tintB] = tintHex ? parseHexColor(tintHex) : [0, 0, 0];
+  const tintSubR = (1 - tintR / 255).toFixed(4);
+  const tintSubG = (1 - tintG / 255).toFixed(4);
+  const tintSubB = (1 - tintB / 255).toFixed(4);
+
   const rawId = useId();
   const cleanId = rawId.replace(/:/g, "");
   const dsSidesFilterId = `lg-ds-sides-${cleanId}-${theme}-${variant}`;
   const dsAllFilterId = `lg-ds-all-${cleanId}-${theme}-${variant}`;
+  const tintFilterId = tintHex
+    ? `lg-tint-${cleanId}-${tintHex.replace(/[^a-zA-Z0-9]/g, "")}`
+    : "";
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [layers, setLayers] = useState<LayerState | null>(null);
@@ -788,13 +857,15 @@ export function LiquidGlass({
             </filter>
 
             {/* Drop Shadow 3: True Plus-Darker */}
-            <filter id={dsAllFilterId} colorInterpolationFilters="sRGB">
-              <feComponentTransfer>
-                <feFuncR type="linear" slope="1" intercept={-dsCfg.allSub} />
-                <feFuncG type="linear" slope="1" intercept={-dsCfg.allSub} />
-                <feFuncB type="linear" slope="1" intercept={-dsCfg.allSub} />
-              </feComponentTransfer>
-            </filter>
+            {dsCfg.allSub > 0 && (
+              <filter id={dsAllFilterId} colorInterpolationFilters="sRGB">
+                <feComponentTransfer>
+                  <feFuncR type="linear" slope="1" intercept={-dsCfg.allSub} />
+                  <feFuncG type="linear" slope="1" intercept={-dsCfg.allSub} />
+                  <feFuncB type="linear" slope="1" intercept={-dsCfg.allSub} />
+                </feComponentTransfer>
+              </filter>
+            )}
 
             {/* Drop Shadows 1 & 2: True Plus-Darker */}
             <filter id={dsSidesFilterId} colorInterpolationFilters="sRGB">
@@ -804,12 +875,35 @@ export function LiquidGlass({
                 <feFuncB type="linear" slope="1" intercept={-dsCfg.sidesSub} />
               </feComponentTransfer>
             </filter>
+
+            {/* Tinted Variant: True Plus-Darker 100% Tint Fill */}
+            {tintHex && (
+              <filter id={tintFilterId} colorInterpolationFilters="sRGB">
+                <feComponentTransfer>
+                  <feFuncR
+                    type="linear"
+                    slope="1"
+                    intercept={-Number(tintSubR)}
+                  />
+                  <feFuncG
+                    type="linear"
+                    slope="1"
+                    intercept={-Number(tintSubG)}
+                  />
+                  <feFuncB
+                    type="linear"
+                    slope="1"
+                    intercept={-Number(tintSubB)}
+                  />
+                </feComponentTransfer>
+              </filter>
+            )}
           </defs>
         </svg>
       )}
 
       {/* 0A. Drop Shadow 3 (All-around outer ring) */}
-      {layers && (
+      {layers && dsCfg.allSub > 0 && (
         <div
           className="pointer-events-none absolute rounded-[inherit]"
           style={{
@@ -865,6 +959,14 @@ export function LiquidGlass({
         />
       )}
 
+      {/* 0C. Solid Backing (Tinted variant: 100% white behind the glass) */}
+      {preset.backingColor && (
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[inherit]"
+          style={{ backgroundColor: preset.backingColor }}
+        />
+      )}
+
       {/* 1. Glass Backdrop (+ True GPU Plus-Darker Pass in Chromium) */}
       <div
         className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
@@ -885,7 +987,27 @@ export function LiquidGlass({
         />
       )}
 
-      {/* 1B. Glass Body Fills (rendered bottom-to-top) */}
+      {/* 1B. Tinted Variant Fill (100% Tint Color, Plus Darker) */}
+      {tintHex && (
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[inherit]"
+          style={
+            useSvg
+              ? {
+                  backdropFilter: `url(#${tintFilterId})`,
+                  WebkitBackdropFilter: `url(#${tintFilterId})`,
+                }
+              : {
+                  backgroundColor: tintHex,
+                  mixBlendMode: layers?.cssPlusDarker
+                    ? "plus-darker"
+                    : "multiply",
+                }
+          }
+        />
+      )}
+
+      {/* 1C. Glass Body Fills (rendered bottom-to-top) */}
       {fills.map((fill, index) => (
         <div
           key={index}
