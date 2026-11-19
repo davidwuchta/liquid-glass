@@ -1,27 +1,50 @@
-import {
-  GLASS_CONFIG,
-  type GlassTheme,
-  type GlassVariant,
-  type ResolvedPreset,
-} from "./presets";
+import { GLASS_CONFIG, type ResolvedPreset } from "./presets";
 
-export interface CachedLayers {
-  displacementUrl: string;
+interface ShadingLayers {
   darkenUrl: string;
   brightenUrl: string;
   rimUrl: string;
 }
 
+export interface CachedLayers extends ShadingLayers {
+  displacementUrl: string;
+}
+
 export interface LayerState extends CachedLayers {
   w: number;
   h: number;
+  radius: number;
   svgBackdrop: boolean;
   cssPlusDarker: boolean;
 }
 
-const layerCache = new Map<string, CachedLayers>();
+const dispCache = new Map<string, string>();
+const shadingCache = new Map<string, ShadingLayers>();
+
+function lruGet<T>(cache: Map<string, T>, key: string): T | undefined {
+  const value = cache.get(key);
+  if (value !== undefined) {
+    cache.delete(key);
+    cache.set(key, value);
+  }
+  return value;
+}
+
+function lruSet<T>(cache: Map<string, T>, key: string, value: T): void {
+  if (cache.size >= GLASS_CONFIG.cache.maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey !== undefined) {
+      cache.delete(oldestKey);
+    }
+  }
+  cache.set(key, value);
+}
+
+let cachedSvgBackdropSupport: boolean | null = null;
+let cachedCssPlusDarkerSupport: boolean | null = null;
 
 export function detectSvgBackdropSupport(): boolean {
+  if (cachedSvgBackdropSupport !== null) return cachedSvgBackdropSupport;
   if (typeof navigator === "undefined" || typeof CSS === "undefined") {
     return false;
   }
@@ -29,19 +52,24 @@ export function detectSvgBackdropSupport(): boolean {
   const isIOS = /iP(ad|hone|od)/.test(ua);
   const isSafari = /Safari/.test(ua) && !/Chrome|Chromium|Edg|OPR/.test(ua);
   const isFirefox = /Firefox|FxiOS/.test(ua);
-  if (isIOS || isSafari || isFirefox) return false;
+  if (isIOS || isSafari || isFirefox) {
+    cachedSvgBackdropSupport = false;
+    return false;
+  }
 
-  return (
+  cachedSvgBackdropSupport =
     CSS.supports("backdrop-filter", "url(#a)") ||
-    CSS.supports("-webkit-backdrop-filter", "url(#a)")
-  );
+    CSS.supports("-webkit-backdrop-filter", "url(#a)");
+  return cachedSvgBackdropSupport;
 }
 
 export function detectCssPlusDarkerSupport(): boolean {
+  if (cachedCssPlusDarkerSupport !== null) return cachedCssPlusDarkerSupport;
   if (typeof CSS === "undefined" || typeof CSS.supports !== "function") {
     return false;
   }
-  return CSS.supports("mix-blend-mode", "plus-darker");
+  cachedCssPlusDarkerSupport = CSS.supports("mix-blend-mode", "plus-darker");
+  return cachedCssPlusDarkerSupport;
 }
 
 export function getOrGenerateLayers(
@@ -52,19 +80,9 @@ export function getOrGenerateLayers(
   splay: number,
   lightAngle: number,
   lightOpacity: number,
-  theme: GlassTheme,
-  variant: GlassVariant,
   preset: ResolvedPreset,
   svgBackdrop: boolean,
 ): CachedLayers {
-  const key = `${theme}-${variant}-${w}x${h}-${radius}-${depth}-${splay}-${lightAngle}-${lightOpacity}-${svgBackdrop ? 1 : 0}`;
-  const cached = layerCache.get(key);
-  if (cached) {
-    layerCache.delete(key);
-    layerCache.set(key, cached);
-    return cached;
-  }
-
   const refCfg = GLASS_CONFIG.refraction;
   const {
     bevel: bevelCfg,
@@ -73,12 +91,33 @@ export function getOrGenerateLayers(
     rim: rimCfg,
   } = preset;
 
-  // 1. Displacement Map Canvas (Chromium only)
+  const rx = w / 2;
+  const ry = h / 2;
+  const r = Math.min(radius, rx, ry);
+
+  const needsDisp = svgBackdrop && !preset.backingColor;
+  const dispKey = `${w}x${h}-${r}-${depth}-${splay}`;
+  const shadingKey = `${w}x${h}-${r}-${depth}-${lightAngle}-${lightOpacity}-${isLightCfg.peak}-${isDarkCfg.peak}-${svgBackdrop ? 1 : 0}`;
+
+  const cachedDisp = needsDisp ? lruGet(dispCache, dispKey) : "";
+  const cachedShading = lruGet(shadingCache, shadingKey);
+
+  const computeDisp = needsDisp && cachedDisp === undefined;
+  const computeShading = cachedShading === undefined;
+
+  if (!computeDisp && !computeShading) {
+    return {
+      displacementUrl: cachedDisp ?? "",
+      ...cachedShading,
+    };
+  }
+
+  // 1. Displacement Map Canvas (Chromium without solid backing only)
   let dispCanvas: HTMLCanvasElement | null = null;
   let dispCtx: CanvasRenderingContext2D | null = null;
   let dispImg: ImageData | null = null;
   let dispData: Uint8ClampedArray | null = null;
-  if (svgBackdrop) {
+  if (computeDisp) {
     dispCanvas = document.createElement("canvas");
     dispCanvas.width = w;
     dispCanvas.height = h;
@@ -87,43 +126,53 @@ export function getOrGenerateLayers(
     dispData = dispImg.data;
   }
 
-  // 2A. Darkening Canvas:
-  // - Chromium SVG feComposite: opaque white (255) neutral, (1 - darkSub) darkened
-  // - Safari/Firefox DOM overlay: transparent neutral, rgba(0, 0, 0, darkSub) darkened
-  const darkCanvas = document.createElement("canvas");
-  darkCanvas.width = w;
-  darkCanvas.height = h;
-  const darkCtx = darkCanvas.getContext("2d")!;
-  const darkImg = darkCtx.createImageData(w, h);
-  const darkData = darkImg.data;
-  if (svgBackdrop) darkData.fill(255);
+  // 2 & 3. Shading & Rim Canvases
+  let darkCanvas: HTMLCanvasElement | null = null;
+  let darkCtx: CanvasRenderingContext2D | null = null;
+  let darkImg: ImageData | null = null;
+  let darkData: Uint8ClampedArray | null = null;
 
-  // 2B. Additive Brightening Canvas (Bottom Glass Bevel + Inner Shadows 1 & 2 via plus-lighter)
-  const brightCanvas = document.createElement("canvas");
-  brightCanvas.width = w;
-  brightCanvas.height = h;
-  const brightCtx = brightCanvas.getContext("2d")!;
-  const brightImg = brightCtx.createImageData(w, h);
-  const brightData = brightImg.data;
+  let brightCanvas: HTMLCanvasElement | null = null;
+  let brightCtx: CanvasRenderingContext2D | null = null;
+  let brightImg: ImageData | null = null;
+  let brightData: Uint8ClampedArray | null = null;
 
-  // 3. 1px Surface-Normal Specular Rim Canvas
-  const rimCanvas = document.createElement("canvas");
-  rimCanvas.width = w;
-  rimCanvas.height = h;
-  const rimCtx = rimCanvas.getContext("2d")!;
-  const rimImg = rimCtx.createImageData(w, h);
-  const rimData = rimImg.data;
+  let rimCanvas: HTMLCanvasElement | null = null;
+  let rimCtx: CanvasRenderingContext2D | null = null;
+  let rimImg: ImageData | null = null;
+  let rimData: Uint8ClampedArray | null = null;
 
-  const rx = w / 2;
-  const ry = h / 2;
-  const r = Math.min(radius, rx, ry);
+  if (computeShading) {
+    darkCanvas = document.createElement("canvas");
+    darkCanvas.width = w;
+    darkCanvas.height = h;
+    darkCtx = darkCanvas.getContext("2d")!;
+    darkImg = darkCtx.createImageData(w, h);
+    darkData = darkImg.data;
+    if (svgBackdrop) darkData.fill(255);
+
+    brightCanvas = document.createElement("canvas");
+    brightCanvas.width = w;
+    brightCanvas.height = h;
+    brightCtx = brightCanvas.getContext("2d")!;
+    brightImg = brightCtx.createImageData(w, h);
+    brightData = brightImg.data;
+
+    rimCanvas = document.createElement("canvas");
+    rimCanvas.width = w;
+    rimCanvas.height = h;
+    rimCtx = rimCanvas.getContext("2d")!;
+    rimImg = rimCtx.createImageData(w, h);
+    rimData = rimImg.data;
+  }
+
   const bevel = Math.max(1, depth);
-
   const rShade = Math.min(
     Math.max(r, bevel * bevelCfg.shadeRadiusFactor),
     rx,
     ry,
   );
+  const sameShadeRadius = rShade === r;
   const splayExp = 1.85 + ((100 - splay) / 100) * 0.75;
   const shadeDepth = Math.max(
     bevelCfg.shadeDepthMin,
@@ -161,7 +210,10 @@ export function getOrGenerateLayers(
   };
 
   const maxShadeDist = Math.max(shadeDepth, isLightCfg.depth, isDarkCfg.depth);
-  const maxComputeDist = Math.max(svgBackdrop ? bevel : 0, maxShadeDist, 3);
+  const maxComputeDist = Math.max(
+    computeDisp ? bevel : 0,
+    computeShading ? Math.max(maxShadeDist, 3) : 0,
+  );
 
   for (let y = 0; y < h; y++) {
     const py = y - ry;
@@ -188,8 +240,6 @@ export function getOrGenerateLayers(
       const len = Math.hypot(gx, gy) || 1;
       const normX = gx / len;
       const normY = gy / len;
-
-      const dot = normX * lx + normY * ly;
 
       // --- A. Displacement Map (C1 shoulder prevents corner UV fold-over) ---
       if (dispData) {
@@ -221,17 +271,27 @@ export function getOrGenerateLayers(
         dispData[idx + 3] = 255;
       }
 
+      if (!darkData || !brightData || !rimData) continue;
+
+      const dot = normX * lx + normY * ly;
+
       // --- B. Fixed-Distance Bevel Shading + Inner Shadows 1, 2 & 3 ---
       let darkSub = 0;
       let addAlpha = 0;
 
       if (distFromEdge >= 0 && distFromEdge < maxShadeDist) {
-        const sgx =
-          sdRoundedBox(px + 1, py, rShade) - sdRoundedBox(px - 1, py, rShade);
-        const sgy =
-          sdRoundedBox(px, py + 1, rShade) - sdRoundedBox(px, py - 1, rShade);
-        const slen = Math.hypot(sgx, sgy) || 1;
-        const shadeDot = (sgx / slen) * lx + (sgy / slen) * ly;
+        let sNormX = normX;
+        let sNormY = normY;
+        if (!sameShadeRadius) {
+          const sgx =
+            sdRoundedBox(px + 1, py, rShade) - sdRoundedBox(px - 1, py, rShade);
+          const sgy =
+            sdRoundedBox(px, py + 1, rShade) - sdRoundedBox(px, py - 1, rShade);
+          const slen = Math.hypot(sgx, sgy) || 1;
+          sNormX = sgx / slen;
+          sNormY = sgy / slen;
+        }
+        const shadeDot = sNormX * lx + sNormY * ly;
 
         if (distFromEdge < shadeDepth) {
           const s = 1 - distFromEdge / shadeDepth;
@@ -248,7 +308,7 @@ export function getOrGenerateLayers(
         }
 
         // Inner Shadows 1 & 2 (Top + Bottom, Plus lighter)
-        const verticalDot = Math.abs(sgy / slen);
+        const verticalDot = Math.abs(sNormY);
         if (verticalDot > 0 && distFromEdge < isLightCfg.depth) {
           const innerT = Math.max(
             0,
@@ -260,7 +320,7 @@ export function getOrGenerateLayers(
         }
 
         // Inner Shadow 3 (Top only: #E6E6E6, Plus darker)
-        const topVerticalDot = -(sgy / slen);
+        const topVerticalDot = -sNormY;
         if (
           isDarkCfg.peak > 0 &&
           topVerticalDot > 0 &&
@@ -320,28 +380,41 @@ export function getOrGenerateLayers(
     }
   }
 
-  let displacementUrl = "";
-  if (dispCanvas && dispCtx && dispImg) {
+  let displacementUrl = cachedDisp ?? "";
+  if (computeDisp && dispCanvas && dispCtx && dispImg) {
     dispCtx.putImageData(dispImg, 0, 0);
     displacementUrl = dispCanvas.toDataURL();
+    lruSet(dispCache, dispKey, displacementUrl);
   }
-  darkCtx.putImageData(darkImg, 0, 0);
-  brightCtx.putImageData(brightImg, 0, 0);
-  rimCtx.putImageData(rimImg, 0, 0);
 
-  const result: CachedLayers = {
+  let shading: ShadingLayers;
+  if (
+    computeShading &&
+    darkCanvas &&
+    darkCtx &&
+    darkImg &&
+    brightCanvas &&
+    brightCtx &&
+    brightImg &&
+    rimCanvas &&
+    rimCtx &&
+    rimImg
+  ) {
+    darkCtx.putImageData(darkImg, 0, 0);
+    brightCtx.putImageData(brightImg, 0, 0);
+    rimCtx.putImageData(rimImg, 0, 0);
+    shading = {
+      darkenUrl: darkCanvas.toDataURL(),
+      brightenUrl: brightCanvas.toDataURL(),
+      rimUrl: rimCanvas.toDataURL(),
+    };
+    lruSet(shadingCache, shadingKey, shading);
+  } else {
+    shading = cachedShading!;
+  }
+
+  return {
     displacementUrl,
-    darkenUrl: darkCanvas.toDataURL(),
-    brightenUrl: brightCanvas.toDataURL(),
-    rimUrl: rimCanvas.toDataURL(),
+    ...shading,
   };
-
-  if (layerCache.size >= GLASS_CONFIG.cache.maxEntries) {
-    const oldestKey = layerCache.keys().next().value;
-    if (oldestKey !== undefined) {
-      layerCache.delete(oldestKey);
-    }
-  }
-  layerCache.set(key, result);
-  return result;
 }

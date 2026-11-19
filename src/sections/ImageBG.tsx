@@ -2,7 +2,7 @@ import Image from "next/image";
 import { Draggable } from "@/components/Draggable";
 import { LiquidGlass } from "@/components/LiquidGlass";
 
-import ImgHomeBg from "@/assets/images/img-home-bg-06.jpg";
+import ImgHomeBg from "@/assets/images/img-home-bg-04.jpg";
 
 export const ImageBG = () => {
   return (
@@ -20,91 +20,9 @@ export const ImageBG = () => {
         <div className="flex gap-5">
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
-              radius={1000}
-              className="w-20 h-12"
-            />
-          </Draggable>
-          <Draggable>
-            <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
-              radius={1000}
-              className="w-20 h-12"
-            />
-          </Draggable>
-          <Draggable>
-            <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
-              radius={1000}
-              className="w-20 h-12"
-            />
-          </Draggable>
-          <Draggable>
-            <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
-              radius={1000}
-              className="w-20 h-12"
-            />
-          </Draggable>
-          <Draggable>
-            <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
-              radius={1000}
-              className="w-20 h-12"
-            />
-          </Draggable>
-          <Draggable>
-            <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
-              radius={1000}
-              className="w-20 h-12"
-            />
-          </Draggable>
-          <Draggable>
-            <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
+              dispersion={0}
               radius={1000}
               className="w-32 h-32"
               contentClassName="flex items-center justify-center"
@@ -114,31 +32,23 @@ export const ImageBG = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="opaque"
+              dispersion={0}
               radius={64}
               className="w-64 h-32"
               contentClassName="flex items-center justify-center"
             >
-              <p>
+              <p className="text-black">
                 Clouds <span className="text-red-500">1°</span>
               </p>
             </LiquidGlass>
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="opaque"
+              dispersion={0}
               radius={64}
               className="w-64 h-32"
               contentClassName="flex items-center justify-center"
@@ -150,7 +60,6 @@ export const ImageBG = () => {
           </Draggable>
         </div>
       </main>
-      ;
     </section>
   );
 };
