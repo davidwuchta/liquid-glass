@@ -82,9 +82,34 @@ interface CachedLayers {
 interface LayerState extends CachedLayers {
   w: number;
   h: number;
+  svgBackdrop: boolean;
+  cssPlusDarker: boolean;
 }
 
 const layerCache = new Map<string, CachedLayers>();
+
+function detectSvgBackdropSupport(): boolean {
+  if (typeof navigator === "undefined" || typeof CSS === "undefined") {
+    return false;
+  }
+  const ua = navigator.userAgent;
+  const isIOS = /iP(ad|hone|od)/.test(ua);
+  const isSafari = /Safari/.test(ua) && !/Chrome|Chromium|Edg|OPR/.test(ua);
+  const isFirefox = /Firefox|FxiOS/.test(ua);
+  if (isIOS || isSafari || isFirefox) return false;
+
+  return (
+    CSS.supports("backdrop-filter", "url(#a)") ||
+    CSS.supports("-webkit-backdrop-filter", "url(#a)")
+  );
+}
+
+function detectCssPlusDarkerSupport(): boolean {
+  if (typeof CSS === "undefined" || typeof CSS.supports !== "function") {
+    return false;
+  }
+  return CSS.supports("mix-blend-mode", "plus-darker");
+}
 
 function getOrGenerateLayers(
   w: number,
@@ -94,8 +119,9 @@ function getOrGenerateLayers(
   splay: number,
   lightAngle: number,
   lightOpacity: number,
+  svgBackdrop: boolean,
 ): CachedLayers {
-  const key = `${w}x${h}-${radius}-${depth}-${splay}-${lightAngle}-${lightOpacity}`;
+  const key = `${w}x${h}-${radius}-${depth}-${splay}-${lightAngle}-${lightOpacity}-${svgBackdrop ? 1 : 0}`;
   const cached = layerCache.get(key);
   if (cached) {
     layerCache.delete(key);
@@ -111,22 +137,30 @@ function getOrGenerateLayers(
     rim: rimCfg,
   } = GLASS_CONFIG;
 
-  // 1. Displacement Map Canvas
-  const dispCanvas = document.createElement("canvas");
-  dispCanvas.width = w;
-  dispCanvas.height = h;
-  const dispCtx = dispCanvas.getContext("2d")!;
-  const dispImg = dispCtx.createImageData(w, h);
-  const dispData = dispImg.data;
+  // 1. Displacement Map Canvas (Chromium only)
+  let dispCanvas: HTMLCanvasElement | null = null;
+  let dispCtx: CanvasRenderingContext2D | null = null;
+  let dispImg: ImageData | null = null;
+  let dispData: Uint8ClampedArray | null = null;
+  if (svgBackdrop) {
+    dispCanvas = document.createElement("canvas");
+    dispCanvas.width = w;
+    dispCanvas.height = h;
+    dispCtx = dispCanvas.getContext("2d")!;
+    dispImg = dispCtx.createImageData(w, h);
+    dispData = dispImg.data;
+  }
 
-  // 2A. True Plus-Darker Map for SVG feComposite (k2=1, k3=1, k4=-1)
+  // 2A. Darkening Canvas:
+  // - Chromium SVG feComposite: opaque white (255) neutral, (1 - darkSub) darkened
+  // - Safari/Firefox DOM overlay: transparent neutral, rgba(0, 0, 0, darkSub) darkened
   const darkCanvas = document.createElement("canvas");
   darkCanvas.width = w;
   darkCanvas.height = h;
   const darkCtx = darkCanvas.getContext("2d")!;
   const darkImg = darkCtx.createImageData(w, h);
   const darkData = darkImg.data;
-  darkData.fill(255);
+  if (svgBackdrop) darkData.fill(255);
 
   // 2B. Additive Brightening Canvas (Bottom Glass Bevel + Inner Shadows 1 & 2 via plus-lighter)
   const brightCanvas = document.createElement("canvas");
@@ -191,7 +225,7 @@ function getOrGenerateLayers(
   };
 
   const maxShadeDist = Math.max(shadeDepth, isLightCfg.depth, isDarkCfg.depth);
-  const maxComputeDist = Math.max(bevel, maxShadeDist, 3);
+  const maxComputeDist = Math.max(svgBackdrop ? bevel : 0, maxShadeDist, 3);
 
   for (let y = 0; y < h; y++) {
     const py = y - ry;
@@ -203,10 +237,12 @@ function getOrGenerateLayers(
       const idx = (y * w + x) * 4;
 
       if (distFromEdge >= maxComputeDist) {
-        dispData[idx] = 128;
-        dispData[idx + 1] = 128;
-        dispData[idx + 2] = 128;
-        dispData[idx + 3] = 255;
+        if (dispData) {
+          dispData[idx] = 128;
+          dispData[idx + 1] = 128;
+          dispData[idx + 2] = 128;
+          dispData[idx + 3] = 255;
+        }
         continue;
       }
 
@@ -220,29 +256,34 @@ function getOrGenerateLayers(
       const dot = normX * lx + normY * ly;
 
       // --- A. Displacement Map (C1 shoulder prevents corner UV fold-over) ---
-      if (distFromEdge < bevel) {
-        const clampedDist = Math.max(0, distFromEdge);
-        const t = 1 - clampedDist / bevel;
-        let tSoft: number;
-        if (t < shoulderT) {
-          tSoft = t / shoulderNorm;
+      if (dispData) {
+        if (distFromEdge < bevel) {
+          const clampedDist = Math.max(0, distFromEdge);
+          const t = 1 - clampedDist / bevel;
+          let tSoft: number;
+          if (t < shoulderT) {
+            tSoft = t / shoulderNorm;
+          } else {
+            const u = (t - shoulderT) / shoulderSpan;
+            tSoft =
+              (shoulderT + shoulderSpan * (u - 0.5 * u * u)) / shoulderNorm;
+          }
+          const mag = Math.pow(tSoft, splayExp);
+          const nx = -normX * mag;
+          const ny = -normY * mag;
+          dispData[idx] = Math.round(
+            Math.min(255, Math.max(0, 128 + nx * 127)),
+          );
+          dispData[idx + 1] = Math.round(
+            Math.min(255, Math.max(0, 128 + ny * 127)),
+          );
         } else {
-          const u = (t - shoulderT) / shoulderSpan;
-          tSoft = (shoulderT + shoulderSpan * (u - 0.5 * u * u)) / shoulderNorm;
+          dispData[idx] = 128;
+          dispData[idx + 1] = 128;
         }
-        const mag = Math.pow(tSoft, splayExp);
-        const nx = -normX * mag;
-        const ny = -normY * mag;
-        dispData[idx] = Math.round(Math.min(255, Math.max(0, 128 + nx * 127)));
-        dispData[idx + 1] = Math.round(
-          Math.min(255, Math.max(0, 128 + ny * 127)),
-        );
-      } else {
-        dispData[idx] = 128;
-        dispData[idx + 1] = 128;
+        dispData[idx + 2] = 128;
+        dispData[idx + 3] = 255;
       }
-      dispData[idx + 2] = 128;
-      dispData[idx + 3] = 255;
 
       // --- B. Fixed-Distance Bevel Shading + Inner Shadows 1, 2 & 3 ---
       let darkSub = 0;
@@ -297,13 +338,22 @@ function getOrGenerateLayers(
 
       if (darkSub > 0) {
         const dither = ign(x, y) - 0.5;
-        const val = Math.round(
-          Math.min(255, Math.max(0, (1 - darkSub) * 255 + dither)),
-        );
-        darkData[idx] = val;
-        darkData[idx + 1] = val;
-        darkData[idx + 2] = val;
-        darkData[idx + 3] = 255;
+        if (svgBackdrop) {
+          const val = Math.round(
+            Math.min(255, Math.max(0, (1 - darkSub) * 255 + dither)),
+          );
+          darkData[idx] = val;
+          darkData[idx + 1] = val;
+          darkData[idx + 2] = val;
+          darkData[idx + 3] = 255;
+        } else {
+          darkData[idx] = 0;
+          darkData[idx + 1] = 0;
+          darkData[idx + 2] = 0;
+          darkData[idx + 3] = Math.round(
+            Math.min(255, Math.max(0, Math.min(1, darkSub) * 255 + dither)),
+          );
+        }
       }
 
       if (addAlpha > 0) {
@@ -330,13 +380,17 @@ function getOrGenerateLayers(
     }
   }
 
-  dispCtx.putImageData(dispImg, 0, 0);
+  let displacementUrl = "";
+  if (dispCanvas && dispCtx && dispImg) {
+    dispCtx.putImageData(dispImg, 0, 0);
+    displacementUrl = dispCanvas.toDataURL();
+  }
   darkCtx.putImageData(darkImg, 0, 0);
   brightCtx.putImageData(brightImg, 0, 0);
   rimCtx.putImageData(rimImg, 0, 0);
 
   const result: CachedLayers = {
-    displacementUrl: dispCanvas.toDataURL(),
+    displacementUrl,
     darkenUrl: darkCanvas.toDataURL(),
     brightenUrl: brightCanvas.toDataURL(),
     rimUrl: rimCanvas.toDataURL(),
@@ -389,6 +443,9 @@ export function LiquidGlass({
     const container = containerRef.current;
     if (!container) return;
 
+    const svgBackdrop = detectSvgBackdropSupport();
+    const cssPlusDarker = detectCssPlusDarkerSupport();
+
     let lastW = 0;
     let lastH = 0;
     let lastR = -1;
@@ -423,8 +480,9 @@ export function LiquidGlass({
           splay,
           lightAngle,
           lightOpacity,
+          svgBackdrop,
         );
-        setLayers({ w, h, ...generated });
+        setLayers({ w, h, svgBackdrop, cssPlusDarker, ...generated });
       });
     });
 
@@ -442,8 +500,12 @@ export function LiquidGlass({
     fill: fillCfg,
   } = GLASS_CONFIG;
 
+  const useSvg = layers?.svgBackdrop ?? false;
+  const fallbackDarkBlend: React.CSSProperties["mixBlendMode"] =
+    layers?.cssPlusDarker ? "plus-darker" : "normal";
+
   const activeFilterId = `lg-${cleanId}-${layers?.w ?? 0}x${layers?.h ?? 0}-${radius ?? "css"}-${depth}-${splay}-${lightAngle}-${lightOpacity}`;
-  const glassBackdrop = layers
+  const glassBackdrop = useSvg
     ? `url(#${activeFilterId})`
     : `blur(${frost * refCfg.fallbackBlurFactor}px)`;
 
@@ -467,171 +529,191 @@ export function LiquidGlass({
       className={`relative ${radius === undefined ? "rounded-[23px]" : ""} ${className}`}
       {...props}
     >
-      <svg
-        width="0"
-        height="0"
-        className="pointer-events-none absolute left-0 top-0 overflow-visible"
-        aria-hidden="true"
-      >
-        <defs>
-          {/* Main Glass Refraction + Chromatic Dispersion + Interior Plus-Darker Filter */}
-          <filter
-            id={activeFilterId}
-            x="0"
-            y="0"
-            width={layers?.w ?? 256}
-            height={layers?.h ?? 256}
-            filterUnits="userSpaceOnUse"
-            primitiveUnits="userSpaceOnUse"
-            colorInterpolationFilters="sRGB"
-          >
-            <feGaussianBlur
-              in="SourceGraphic"
-              stdDeviation={stdDev}
-              edgeMode="duplicate"
-              result="blurred"
-            />
-            <feImage
+      {useSvg && layers && (
+        <svg
+          width="0"
+          height="0"
+          className="pointer-events-none absolute left-0 top-0 overflow-visible"
+          aria-hidden="true"
+        >
+          <defs>
+            {/* Main Glass Refraction + Chromatic Dispersion + Interior Plus-Darker Filter */}
+            <filter
+              id={activeFilterId}
               x="0"
               y="0"
-              width={layers?.w ?? 256}
-              height={layers?.h ?? 256}
-              href={layers?.displacementUrl}
-              preserveAspectRatio="none"
-              result="dispMapRaw"
-            />
-            <feGaussianBlur
-              in="dispMapRaw"
-              stdDeviation={refCfg.dispMapBlurStdDev}
-              edgeMode="duplicate"
-              result="dispMap"
-            />
-            <feDisplacementMap
-              in="blurred"
-              in2="dispMap"
-              scale={scaleR}
-              xChannelSelector="R"
-              yChannelSelector="G"
-              result="dispR"
-            />
-            <feColorMatrix
-              in="dispR"
-              type="matrix"
-              values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
-              result="r"
-            />
-            <feDisplacementMap
-              in="blurred"
-              in2="dispMap"
-              scale={scaleG}
-              xChannelSelector="R"
-              yChannelSelector="G"
-              result="dispG"
-            />
-            <feColorMatrix
-              in="dispG"
-              type="matrix"
-              values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
-              result="g"
-            />
-            <feDisplacementMap
-              in="blurred"
-              in2="dispMap"
-              scale={scaleB}
-              xChannelSelector="R"
-              yChannelSelector="G"
-              result="dispB"
-            />
-            <feColorMatrix
-              in="dispB"
-              type="matrix"
-              values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
-              result="b"
-            />
-            <feBlend in="r" in2="g" mode="screen" result="rg" />
-            <feBlend in="rg" in2="b" mode="screen" result="rgb" />
+              width={layers.w}
+              height={layers.h}
+              filterUnits="userSpaceOnUse"
+              primitiveUnits="userSpaceOnUse"
+              colorInterpolationFilters="sRGB"
+            >
+              <feGaussianBlur
+                in="SourceGraphic"
+                stdDeviation={stdDev}
+                edgeMode="duplicate"
+                result="blurred"
+              />
+              <feImage
+                x="0"
+                y="0"
+                width={layers.w}
+                height={layers.h}
+                href={layers.displacementUrl}
+                preserveAspectRatio="none"
+                result="dispMapRaw"
+              />
+              <feGaussianBlur
+                in="dispMapRaw"
+                stdDeviation={refCfg.dispMapBlurStdDev}
+                edgeMode="duplicate"
+                result="dispMap"
+              />
+              <feDisplacementMap
+                in="blurred"
+                in2="dispMap"
+                scale={scaleR}
+                xChannelSelector="R"
+                yChannelSelector="G"
+                result="dispR"
+              />
+              <feColorMatrix
+                in="dispR"
+                type="matrix"
+                values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                result="r"
+              />
+              <feDisplacementMap
+                in="blurred"
+                in2="dispMap"
+                scale={scaleG}
+                xChannelSelector="R"
+                yChannelSelector="G"
+                result="dispG"
+              />
+              <feColorMatrix
+                in="dispG"
+                type="matrix"
+                values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                result="g"
+              />
+              <feDisplacementMap
+                in="blurred"
+                in2="dispMap"
+                scale={scaleB}
+                xChannelSelector="R"
+                yChannelSelector="G"
+                result="dispB"
+              />
+              <feColorMatrix
+                in="dispB"
+                type="matrix"
+                values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
+                result="b"
+              />
+              <feBlend in="r" in2="g" mode="screen" result="rg" />
+              <feBlend in="rg" in2="b" mode="screen" result="rgb" />
 
-            <feImage
-              x="0"
-              y="0"
-              width={layers?.w ?? 256}
-              height={layers?.h ?? 256}
-              href={layers?.darkenUrl}
-              preserveAspectRatio="none"
-              result="darkMap"
-            />
-            <feComposite
-              in="rgb"
-              in2="darkMap"
-              operator="arithmetic"
-              k1="0"
-              k2="1"
-              k3="1"
-              k4="-1"
-              result="darkened"
-            />
-          </filter>
+              <feImage
+                x="0"
+                y="0"
+                width={layers.w}
+                height={layers.h}
+                href={layers.darkenUrl}
+                preserveAspectRatio="none"
+                result="darkMap"
+              />
+              <feComposite
+                in="rgb"
+                in2="darkMap"
+                operator="arithmetic"
+                k1="0"
+                k2="1"
+                k3="1"
+                k4="-1"
+                result="darkened"
+              />
+            </filter>
 
-          {/* Drop Shadow 3: True Plus-Darker (#CCCCCC) */}
-          <filter id={dsAllFilterId} colorInterpolationFilters="sRGB">
-            <feComponentTransfer>
-              <feFuncR type="linear" slope="1" intercept={-dsCfg.allSub} />
-              <feFuncG type="linear" slope="1" intercept={-dsCfg.allSub} />
-              <feFuncB type="linear" slope="1" intercept={-dsCfg.allSub} />
-            </feComponentTransfer>
-          </filter>
+            {/* Drop Shadow 3: True Plus-Darker (#CCCCCC) */}
+            <filter id={dsAllFilterId} colorInterpolationFilters="sRGB">
+              <feComponentTransfer>
+                <feFuncR type="linear" slope="1" intercept={-dsCfg.allSub} />
+                <feFuncG type="linear" slope="1" intercept={-dsCfg.allSub} />
+                <feFuncB type="linear" slope="1" intercept={-dsCfg.allSub} />
+              </feComponentTransfer>
+            </filter>
 
-          {/* Drop Shadows 1 & 2: True Plus-Darker (#D0D0D0) */}
-          <filter id={dsSidesFilterId} colorInterpolationFilters="sRGB">
-            <feComponentTransfer>
-              <feFuncR type="linear" slope="1" intercept={-dsCfg.sidesSub} />
-              <feFuncG type="linear" slope="1" intercept={-dsCfg.sidesSub} />
-              <feFuncB type="linear" slope="1" intercept={-dsCfg.sidesSub} />
-            </feComponentTransfer>
-          </filter>
-        </defs>
-      </svg>
+            {/* Drop Shadows 1 & 2: True Plus-Darker (#D0D0D0) */}
+            <filter id={dsSidesFilterId} colorInterpolationFilters="sRGB">
+              <feComponentTransfer>
+                <feFuncR type="linear" slope="1" intercept={-dsCfg.sidesSub} />
+                <feFuncG type="linear" slope="1" intercept={-dsCfg.sidesSub} />
+                <feFuncB type="linear" slope="1" intercept={-dsCfg.sidesSub} />
+              </feComponentTransfer>
+            </filter>
+          </defs>
+        </svg>
+      )}
 
       {/* 0A. Drop Shadow 3 (All-around outer ring) */}
-      <div
-        className="pointer-events-none absolute rounded-[inherit]"
-        style={{
-          inset: `-${dsCfg.allWidthPx}px`,
-          padding: `${dsCfg.allWidthPx}px`,
-          ...(radius !== undefined
-            ? { borderRadius: `${radius + dsCfg.allWidthPx}px` }
-            : {}),
-          backdropFilter: `url(#${dsAllFilterId})`,
-          WebkitBackdropFilter: `url(#${dsAllFilterId})`,
-          WebkitMask:
-            "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
-          WebkitMaskComposite: "xor",
-          maskComposite: "exclude",
-        }}
-      />
+      {layers && (
+        <div
+          className="pointer-events-none absolute rounded-[inherit]"
+          style={{
+            inset: `-${dsCfg.allWidthPx}px`,
+            padding: `${dsCfg.allWidthPx}px`,
+            ...(radius !== undefined
+              ? { borderRadius: `${radius + dsCfg.allWidthPx}px` }
+              : {}),
+            ...(useSvg
+              ? {
+                  backdropFilter: `url(#${dsAllFilterId})`,
+                  WebkitBackdropFilter: `url(#${dsAllFilterId})`,
+                }
+              : {
+                  backgroundColor: `rgba(0, 0, 0, ${dsCfg.allSub})`,
+                  mixBlendMode: fallbackDarkBlend,
+                }),
+            WebkitMask:
+              "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+            WebkitMaskComposite: "xor",
+            maskComposite: "exclude",
+          }}
+        />
+      )}
 
       {/* 0B. Drop Shadows 1 & 2 (Left & Right outer rings) */}
-      <div
-        className="pointer-events-none absolute rounded-[inherit]"
-        style={{
-          top: 0,
-          bottom: 0,
-          left: `-${dsCfg.sidesWidthPx}px`,
-          right: `-${dsCfg.sidesWidthPx}px`,
-          padding: `0px ${dsCfg.sidesWidthPx}px`,
-          ...(radius !== undefined
-            ? { borderRadius: `${radius + dsCfg.sidesWidthPx}px` }
-            : {}),
-          backdropFilter: `url(#${dsSidesFilterId})`,
-          WebkitBackdropFilter: `url(#${dsSidesFilterId})`,
-          WebkitMask:
-            "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
-          WebkitMaskComposite: "xor",
-          maskComposite: "exclude",
-        }}
-      />
+      {layers && (
+        <div
+          className="pointer-events-none absolute rounded-[inherit]"
+          style={{
+            top: 0,
+            bottom: 0,
+            left: `-${dsCfg.sidesWidthPx}px`,
+            right: `-${dsCfg.sidesWidthPx}px`,
+            padding: `0px ${dsCfg.sidesWidthPx}px`,
+            ...(radius !== undefined
+              ? { borderRadius: `${radius + dsCfg.sidesWidthPx}px` }
+              : {}),
+            ...(useSvg
+              ? {
+                  backdropFilter: `url(#${dsSidesFilterId})`,
+                  WebkitBackdropFilter: `url(#${dsSidesFilterId})`,
+                }
+              : {
+                  backgroundColor: `rgba(0, 0, 0, ${dsCfg.sidesSub})`,
+                  mixBlendMode: fallbackDarkBlend,
+                }),
+            WebkitMask:
+              "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+            WebkitMaskComposite: "xor",
+            maskComposite: "exclude",
+          }}
+        />
+      )}
 
-      {/* 1. Glass Backdrop + True GPU Plus-Darker Pass (Top Bevel + Inner Shadow 3) */}
+      {/* 1. Glass Backdrop (+ True GPU Plus-Darker Pass in Chromium) */}
       <div
         className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
         style={{
@@ -639,6 +721,17 @@ export function LiquidGlass({
           WebkitBackdropFilter: glassBackdrop,
         }}
       />
+
+      {/* 1A. Non-Chromium Top Darkening + Inner Shadow 3 Fallback */}
+      {!useSvg && layers && (
+        <div
+          className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
+          style={{
+            backgroundImage: `url(${layers.darkenUrl})`,
+            mixBlendMode: fallbackDarkBlend,
+          }}
+        />
+      )}
 
       {/* 1B. Glass Body Fill (#808080 4%, Luminosity) */}
       <div
