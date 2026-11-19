@@ -74,7 +74,7 @@ function getOrGenerateLayers(
 
   // --- INNER SHADOW 3 (Top only: #E6E6E6, Plus darker) ---
   const is3Depth = 28;
-  const is3Peak = 0.015;
+  const is3Peak = 0.025;
   const is3Falloff = 1.9;
 
   const rad = ((lightAngle - 90) * Math.PI) / 180;
@@ -575,6 +575,15 @@ export function LiquidGlass({
         style={{
           backdropFilter: `blur(${frost * 0.5}px)`,
           WebkitBackdropFilter: `blur(${frost * 0.5}px)`,
+        }}
+      />
+
+      {/* 1B. Glass Body Fill (#808080 4%, Luminosity) */}
+      <div
+        className="pointer-events-none absolute inset-0 rounded-[inherit]"
+        style={{
+          backgroundColor: "rgba(128, 128, 128, 0.04)",
+          mixBlendMode: "luminosity",
         }}
       />
 
