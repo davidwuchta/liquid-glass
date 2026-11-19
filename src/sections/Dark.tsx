@@ -17,78 +17,48 @@ export const Dark = () => {
         <div className="flex gap-5">
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
@@ -97,78 +67,48 @@ export const Dark = () => {
         <div className="flex gap-5">
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="dark"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
@@ -176,26 +116,16 @@ export const Dark = () => {
         </div>
         <Draggable>
           <LiquidGlass
-            refraction={70}
-            depth={30}
-            dispersion={20}
-            frost={6}
-            splay={20}
-            lightAngle={0}
-            lightOpacity={40}
+            theme="dark"
+            variant="opaque"
             radius={34}
             className="w-146.25 h-45"
           />
         </Draggable>
         <Draggable>
           <LiquidGlass
-            refraction={70}
-            depth={30}
-            dispersion={20}
-            frost={6}
-            splay={20}
-            lightAngle={0}
-            lightOpacity={40}
+            theme="dark"
+            variant="opaque"
             radius={34}
             className="w-146.25 h-75"
           />

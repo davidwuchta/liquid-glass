@@ -3,7 +3,7 @@ import { LiquidGlass } from "@/components/LiquidGlass";
 
 export const Light = () => {
   return (
-    <section className="bg-white w-full h-screen flex">
+    <section className="relative bg-white w-full h-screen flex">
       <div className="flex flex-2">
         <div className="w-25 bg-black/60"></div>
         <div className="w-25 bg-black/50"></div>
@@ -17,78 +17,48 @@ export const Light = () => {
         <div className="flex gap-5">
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
@@ -97,78 +67,48 @@ export const Light = () => {
         <div className="flex gap-5">
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
           </Draggable>
           <Draggable>
             <LiquidGlass
-              refraction={70}
-              depth={30}
-              dispersion={20}
-              frost={6}
-              splay={20}
-              lightAngle={0}
-              lightOpacity={40}
+              theme="light"
+              variant="clear"
               radius={1000}
               className="w-20 h-12"
             />
@@ -176,26 +116,16 @@ export const Light = () => {
         </div>
         <Draggable>
           <LiquidGlass
-            refraction={70}
-            depth={30}
-            dispersion={20}
-            frost={6}
-            splay={20}
-            lightAngle={0}
-            lightOpacity={40}
+            theme="light"
+            variant="opaque"
             radius={34}
             className="w-146.25 h-45"
           />
         </Draggable>
         <Draggable>
           <LiquidGlass
-            refraction={70}
-            depth={30}
-            dispersion={20}
-            frost={6}
-            splay={20}
-            lightAngle={0}
-            lightOpacity={40}
+            theme="light"
+            variant="opaque"
             radius={34}
             className="w-146.25 h-75"
           />

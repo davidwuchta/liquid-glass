@@ -2,18 +2,28 @@
 
 import React, { useEffect, useId, useRef, useState } from "react";
 
+export type GlassTheme = "dark" | "light";
+export type GlassVariant = "clear" | "opaque";
+
+export interface GlassFill {
+  color: string;
+  blendMode?: React.CSSProperties["mixBlendMode"];
+}
+
 const GLASS_CONFIG = {
   cache: {
     maxEntries: 24,
   },
   defaults: {
+    theme: "dark" as GlassTheme,
+    variant: "clear" as GlassVariant,
     refraction: 70,
     depth: 30,
     dispersion: 20,
     frost: 6,
     splay: 20,
     lightAngle: 0,
-    lightOpacity: 40,
+    lightOpacity: 25,
     radius: 23,
   },
   refraction: {
@@ -39,7 +49,7 @@ const GLASS_CONFIG = {
   innerShadowLight: {
     // Inner Shadows 1 & 2 (Top + Bottom, Plus lighter)
     depth: 8,
-    peak: 0.08,
+    peak: 0.08, // Dark Clear (#1A1A1A)
     falloff: 2.2,
     dirExp: 1.8,
   },
@@ -63,14 +73,126 @@ const GLASS_CONFIG = {
     // DS 3: x: 0, y: 0, blur: 0, spread: 0.5 (#CCCCCC, Plus darker)
     allWidthPx: 1,
     allSub: 0.1,
-    // DS 4: x: 0, y: 8, blur: 15, spread: 0 (#000000 2%, Normal)
-    ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)",
+    // DS 4: x: 0, y: 8, blur: 15, spread: 0 (#000000 4%, Normal)
+    ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)",
   },
-  fill: {
-    // #808080 4%, Luminosity
-    color: "rgba(128, 128, 128, 0.04)",
+  fills: [
+    // Default (Dark Clear): #999999 17%, Luminosity
+    { color: "rgba(153, 153, 153, 0.17)", blendMode: "luminosity" },
+  ] as GlassFill[],
+};
+
+interface PresetOverride {
+  refraction?: number;
+  depth?: number;
+  dispersion?: number;
+  frost?: number;
+  splay?: number;
+  lightAngle?: number;
+  lightOpacity?: number;
+  bevel?: Partial<typeof GLASS_CONFIG.bevel>;
+  innerShadowLight?: Partial<typeof GLASS_CONFIG.innerShadowLight>;
+  innerShadowDark?: Partial<typeof GLASS_CONFIG.innerShadowDark>;
+  rim?: Partial<typeof GLASS_CONFIG.rim>;
+  dropShadow?: Partial<typeof GLASS_CONFIG.dropShadow>;
+  fills?: GlassFill[];
+}
+
+const GLASS_PRESETS: Record<
+  GlassTheme,
+  Record<GlassVariant, PresetOverride>
+> = {
+  dark: {
+    clear: {
+      // #1A1A1A (26/255)
+      innerShadowLight: { peak: 0.08 },
+      dropShadow: {
+        sidesSub: 0.092, // #D0D0D0
+        allSub: 0.1, // #CCCCCC
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)", // #000000 4%
+      },
+      fills: [
+        { color: "rgba(153, 153, 153, 0.17)", blendMode: "luminosity" }, // #999999 17%
+      ],
+    },
+    opaque: {
+      frost: 16,
+      innerShadowLight: { peak: 0.08 },
+      innerShadowDark: { peak: 0 },
+      dropShadow: {
+        sidesSub: 0.092, // #D0D0D0
+        allSub: 0.1, // #CCCCCC
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)", // #000000 4%
+      },
+      // Ordered bottom-to-top (reverse of Figma's top-to-bottom Fill panel)
+      fills: [
+        { color: "rgba(26, 26, 26, 0.7)", blendMode: "luminosity" }, // 3rd: #1A1A1A 70%
+        { color: "rgba(26, 26, 26, 0.9)", blendMode: "luminosity" }, // 2nd: #1A1A1A 90%
+        { color: "rgba(26, 26, 26, 1)", blendMode: "lighten" }, // 1st: #1A1A1A 100%
+      ],
+    },
   },
-} as const;
+  light: {
+    clear: {
+      // #282828 (40/255) -> 0.08 * (40 / 26)
+      innerShadowLight: { peak: 0.123 },
+      dropShadow: {
+        sidesSub: 0.092, // #D0D0D0
+        allSub: 0.045, // #E8E8E8
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)", // #000000 2%
+      },
+      // Ordered bottom-to-top (reverse of Figma's top-to-bottom Fill panel)
+      fills: [
+        { color: "rgba(0, 0, 0, 0.25)", blendMode: "normal" }, // 4th: #000000 25%
+        { color: "rgba(255, 255, 255, 0.25)", blendMode: "normal" }, // 3rd: #FFFFFF 25%
+        { color: "rgba(68, 68, 68, 0.6)", blendMode: "plus-lighter" }, // 2nd: #444444 60%
+        { color: "rgba(248, 248, 248, 0.2)", blendMode: "luminosity" }, // 1st: #F8F8F8 20%
+      ],
+    },
+    opaque: {
+      frost: 16,
+      innerShadowLight: { peak: 0.123 },
+      innerShadowDark: { peak: 0 },
+      dropShadow: {
+        sidesSub: 0.092, // #D0D0D0
+        allSub: 0.045, // #E8E8E8
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)", // #000000 2%
+      },
+      // Ordered bottom-to-top (reverse of Figma's top-to-bottom Fill panel)
+      fills: [
+        { color: "rgba(255, 255, 255, 0.7)", blendMode: "lighten" }, // 2nd: #FFFFFF 70%
+        { color: "rgba(191, 191, 191, 0.1)", blendMode: "darken" }, // 1st: #BFBFBF 10%
+      ],
+    },
+  },
+};
+
+function resolvePreset(theme: GlassTheme, variant: GlassVariant) {
+  const override = GLASS_PRESETS[theme][variant];
+  return {
+    refraction: override.refraction ?? GLASS_CONFIG.defaults.refraction,
+    depth: override.depth ?? GLASS_CONFIG.defaults.depth,
+    dispersion: override.dispersion ?? GLASS_CONFIG.defaults.dispersion,
+    frost: override.frost ?? GLASS_CONFIG.defaults.frost,
+    splay: override.splay ?? GLASS_CONFIG.defaults.splay,
+    lightAngle: override.lightAngle ?? GLASS_CONFIG.defaults.lightAngle,
+    lightOpacity: override.lightOpacity ?? GLASS_CONFIG.defaults.lightOpacity,
+    bevel: { ...GLASS_CONFIG.bevel, ...override.bevel },
+    innerShadowLight: {
+      ...GLASS_CONFIG.innerShadowLight,
+      ...override.innerShadowLight,
+    },
+    innerShadowDark: {
+      ...GLASS_CONFIG.innerShadowDark,
+      ...override.innerShadowDark,
+    },
+    rim: { ...GLASS_CONFIG.rim, ...override.rim },
+    dropShadow: { ...GLASS_CONFIG.dropShadow, ...override.dropShadow },
+    fills: override.fills ?? GLASS_CONFIG.fills,
+  };
+}
+
+type ResolvedPreset = ReturnType<typeof resolvePreset>;
 
 interface CachedLayers {
   displacementUrl: string;
@@ -119,9 +241,12 @@ function getOrGenerateLayers(
   splay: number,
   lightAngle: number,
   lightOpacity: number,
+  theme: GlassTheme,
+  variant: GlassVariant,
+  preset: ResolvedPreset,
   svgBackdrop: boolean,
 ): CachedLayers {
-  const key = `${w}x${h}-${radius}-${depth}-${splay}-${lightAngle}-${lightOpacity}-${svgBackdrop ? 1 : 0}`;
+  const key = `${theme}-${variant}-${w}x${h}-${radius}-${depth}-${splay}-${lightAngle}-${lightOpacity}-${svgBackdrop ? 1 : 0}`;
   const cached = layerCache.get(key);
   if (cached) {
     layerCache.delete(key);
@@ -129,13 +254,13 @@ function getOrGenerateLayers(
     return cached;
   }
 
+  const refCfg = GLASS_CONFIG.refraction;
   const {
-    refraction: refCfg,
     bevel: bevelCfg,
     innerShadowLight: isLightCfg,
     innerShadowDark: isDarkCfg,
     rim: rimCfg,
-  } = GLASS_CONFIG;
+  } = preset;
 
   // 1. Displacement Map Canvas (Chromium only)
   let dispCanvas: HTMLCanvasElement | null = null;
@@ -325,7 +450,11 @@ function getOrGenerateLayers(
 
         // Inner Shadow 3 (Top only: #E6E6E6, Plus darker)
         const topVerticalDot = -(sgy / slen);
-        if (topVerticalDot > 0 && distFromEdge < isDarkCfg.depth) {
+        if (
+          isDarkCfg.peak > 0 &&
+          topVerticalDot > 0 &&
+          distFromEdge < isDarkCfg.depth
+        ) {
           const innerT3 = Math.max(
             0,
             1 - Math.max(0, distFromEdge - 1) / isDarkCfg.depth,
@@ -407,6 +536,8 @@ function getOrGenerateLayers(
 }
 
 interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
+  theme?: GlassTheme;
+  variant?: GlassVariant;
   refraction?: number;
   depth?: number;
   dispersion?: number;
@@ -419,13 +550,15 @@ interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export function LiquidGlass({
-  refraction = GLASS_CONFIG.defaults.refraction,
-  depth = GLASS_CONFIG.defaults.depth,
-  dispersion = GLASS_CONFIG.defaults.dispersion,
-  frost = GLASS_CONFIG.defaults.frost,
-  splay = GLASS_CONFIG.defaults.splay,
-  lightAngle = GLASS_CONFIG.defaults.lightAngle,
-  lightOpacity = GLASS_CONFIG.defaults.lightOpacity,
+  theme = GLASS_CONFIG.defaults.theme,
+  variant = GLASS_CONFIG.defaults.variant,
+  refraction,
+  depth,
+  dispersion,
+  frost,
+  splay,
+  lightAngle,
+  lightOpacity,
   radius,
   className = "",
   contentClassName = "",
@@ -433,10 +566,19 @@ export function LiquidGlass({
   style,
   ...props
 }: LiquidGlassProps) {
+  const preset = resolvePreset(theme, variant);
+  const resolvedRefraction = refraction ?? preset.refraction;
+  const resolvedDepth = depth ?? preset.depth;
+  const resolvedDispersion = dispersion ?? preset.dispersion;
+  const resolvedFrost = frost ?? preset.frost;
+  const resolvedSplay = splay ?? preset.splay;
+  const resolvedLightAngle = lightAngle ?? preset.lightAngle;
+  const resolvedLightOpacity = lightOpacity ?? preset.lightOpacity;
+
   const rawId = useId();
   const cleanId = rawId.replace(/:/g, "");
-  const dsSidesFilterId = `lg-ds-sides-${cleanId}`;
-  const dsAllFilterId = `lg-ds-all-${cleanId}`;
+  const dsSidesFilterId = `lg-ds-sides-${cleanId}-${theme}-${variant}`;
+  const dsAllFilterId = `lg-ds-all-${cleanId}-${theme}-${variant}`;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [layers, setLayers] = useState<LayerState | null>(null);
@@ -447,6 +589,7 @@ export function LiquidGlass({
 
     const svgBackdrop = detectSvgBackdropSupport();
     const cssPlusDarker = detectCssPlusDarkerSupport();
+    const activePreset = resolvePreset(theme, variant);
 
     let lastW = 0;
     let lastH = 0;
@@ -478,10 +621,13 @@ export function LiquidGlass({
           w,
           h,
           computedRadius,
-          depth,
-          splay,
-          lightAngle,
-          lightOpacity,
+          resolvedDepth,
+          resolvedSplay,
+          resolvedLightAngle,
+          resolvedLightOpacity,
+          theme,
+          variant,
+          activePreset,
           svgBackdrop,
         );
         setLayers({ w, h, svgBackdrop, cssPlusDarker, ...generated });
@@ -493,30 +639,34 @@ export function LiquidGlass({
       observer.disconnect();
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [radius, depth, splay, lightAngle, lightOpacity]);
+  }, [
+    theme,
+    variant,
+    radius,
+    resolvedDepth,
+    resolvedSplay,
+    resolvedLightAngle,
+    resolvedLightOpacity,
+  ]);
 
-  const {
-    refraction: refCfg,
-    dropShadow: dsCfg,
-    rim: rimCfg,
-    fill: fillCfg,
-  } = GLASS_CONFIG;
+  const refCfg = GLASS_CONFIG.refraction;
+  const { dropShadow: dsCfg, rim: rimCfg, fills } = preset;
 
   const useSvg = layers?.svgBackdrop ?? false;
   const fallbackDarkBlend: React.CSSProperties["mixBlendMode"] =
     layers?.cssPlusDarker ? "plus-darker" : "normal";
 
-  const activeFilterId = `lg-${cleanId}-${layers?.w ?? 0}x${layers?.h ?? 0}-${radius ?? "css"}-${depth}-${splay}-${lightAngle}-${lightOpacity}`;
+  const activeFilterId = `lg-${cleanId}-${theme}-${variant}-${layers?.w ?? 0}x${layers?.h ?? 0}-${radius ?? "css"}-${resolvedDepth}-${resolvedSplay}-${resolvedLightAngle}-${resolvedLightOpacity}`;
   const glassBackdrop = useSvg
     ? `url(#${activeFilterId})`
-    : `blur(${frost * refCfg.fallbackBlurFactor}px)`;
+    : `blur(${resolvedFrost * refCfg.fallbackBlurFactor}px)`;
 
-  const baseScale = (refraction / 100) * refCfg.baseScaleFactor;
-  const chromaOffset = (dispersion / 100) * refCfg.chromaOffsetFactor;
+  const baseScale = (resolvedRefraction / 100) * refCfg.baseScaleFactor;
+  const chromaOffset = (resolvedDispersion / 100) * refCfg.chromaOffsetFactor;
   const scaleR = (baseScale - chromaOffset).toFixed(2);
   const scaleG = baseScale.toFixed(2);
   const scaleB = (baseScale + chromaOffset).toFixed(2);
-  const stdDev = (frost * refCfg.frostStdDevFactor).toFixed(2);
+  const stdDev = (resolvedFrost * refCfg.frostStdDevFactor).toFixed(2);
 
   return (
     <div
@@ -637,7 +787,7 @@ export function LiquidGlass({
               />
             </filter>
 
-            {/* Drop Shadow 3: True Plus-Darker (#CCCCCC) */}
+            {/* Drop Shadow 3: True Plus-Darker */}
             <filter id={dsAllFilterId} colorInterpolationFilters="sRGB">
               <feComponentTransfer>
                 <feFuncR type="linear" slope="1" intercept={-dsCfg.allSub} />
@@ -646,7 +796,7 @@ export function LiquidGlass({
               </feComponentTransfer>
             </filter>
 
-            {/* Drop Shadows 1 & 2: True Plus-Darker (#D0D0D0) */}
+            {/* Drop Shadows 1 & 2: True Plus-Darker */}
             <filter id={dsSidesFilterId} colorInterpolationFilters="sRGB">
               <feComponentTransfer>
                 <feFuncR type="linear" slope="1" intercept={-dsCfg.sidesSub} />
@@ -735,14 +885,17 @@ export function LiquidGlass({
         />
       )}
 
-      {/* 1B. Glass Body Fill (#808080 4%, Luminosity) */}
-      <div
-        className="pointer-events-none absolute inset-0 rounded-[inherit]"
-        style={{
-          backgroundColor: fillCfg.color,
-          mixBlendMode: "luminosity",
-        }}
-      />
+      {/* 1B. Glass Body Fills (rendered bottom-to-top) */}
+      {fills.map((fill, index) => (
+        <div
+          key={index}
+          className="pointer-events-none absolute inset-0 rounded-[inherit]"
+          style={{
+            backgroundColor: fill.color,
+            mixBlendMode: fill.blendMode ?? "normal",
+          }}
+        />
+      ))}
 
       {/* 2. Additive Brightening + Inner Shadows 1 & 2 (mixBlendMode: "plus-lighter") */}
       <div
