@@ -2,7 +2,7 @@
 
 import React, { useEffect, useId, useRef } from "react";
 
-const SHADER_VERSION = 25;
+const SHADER_VERSION = 27;
 
 interface CachedLayers {
   displacementUrl: string;
@@ -89,6 +89,12 @@ function getOrGenerateLayers(
   const topDarkenMax = Math.min(1, l * 0.12);
   const bottomBrightenMax = Math.min(1, l * 0.045);
 
+  // Deterministic Interleaved Gradient Noise in [0, 1) to eliminate 8-bit quantization banding
+  const ign = (x: number, y: number) => {
+    const n = 52.9829189 * ((0.06711056 * x + 0.00583715 * y) % 1);
+    return n - Math.floor(n);
+  };
+
   const sdRoundedBox = (px: number, py: number, cornerR: number) => {
     const qx = Math.abs(px) - (rx - cornerR);
     const qy = Math.abs(py) - (ry - cornerR);
@@ -119,28 +125,37 @@ function getOrGenerateLayers(
         continue;
       }
 
-      const gx = sdRoundedBox(px + 1, py, r) - sdRoundedBox(px - 1, py, r);
-      const gy = sdRoundedBox(px, py + 1, r) - sdRoundedBox(px, py - 1, r);
+      const eps = 0.25;
+      const gx = sdRoundedBox(px + eps, py, r) - sdRoundedBox(px - eps, py, r);
+      const gy = sdRoundedBox(px, py + eps, r) - sdRoundedBox(px, py - eps, r);
       const len = Math.hypot(gx, gy) || 1;
       const normX = gx / len;
       const normY = gy / len;
 
       const dot = normX * lx + normY * ly;
 
-      // --- A. Displacement Map ---
-      let nx = 0;
-      let ny = 0;
+      // --- A. Displacement Map (no dither noise; C1 shoulder prevents corner UV fold-over) ---
       if (distFromEdge < bevel) {
         const clampedDist = Math.max(0, distFromEdge);
         const t = 1 - clampedDist / bevel;
-        const mag = Math.pow(t, splayExp);
-        nx = -normX * mag;
-        ny = -normY * mag;
+        let tSoft: number;
+        if (t < 0.8) {
+          tSoft = t / 0.9;
+        } else {
+          const u = (t - 0.8) / 0.2;
+          tSoft = (0.8 + 0.2 * (u - 0.5 * u * u)) / 0.9;
+        }
+        const mag = Math.pow(tSoft, splayExp);
+        const nx = -normX * mag;
+        const ny = -normY * mag;
+        dispData[idx] = Math.round(Math.min(255, Math.max(0, 128 + nx * 127)));
+        dispData[idx + 1] = Math.round(
+          Math.min(255, Math.max(0, 128 + ny * 127)),
+        );
+      } else {
+        dispData[idx] = 128;
+        dispData[idx + 1] = 128;
       }
-      dispData[idx] = Math.round(Math.min(255, Math.max(0, 128 + nx * 127)));
-      dispData[idx + 1] = Math.round(
-        Math.min(255, Math.max(0, 128 + ny * 127)),
-      );
       dispData[idx + 2] = 128;
       dispData[idx + 3] = 255;
 
@@ -196,7 +211,10 @@ function getOrGenerateLayers(
       }
 
       if (darkSub > 0) {
-        const val = Math.round(Math.max(0, 1 - darkSub) * 255);
+        const dither = ign(x, y) - 0.5;
+        const val = Math.round(
+          Math.min(255, Math.max(0, (1 - darkSub) * 255 + dither)),
+        );
         darkData[idx] = val;
         darkData[idx + 1] = val;
         darkData[idx + 2] = val;
@@ -204,10 +222,13 @@ function getOrGenerateLayers(
       }
 
       if (addAlpha > 0) {
+        const dither = ign(x + 11, y + 23) - 0.5;
         brightData[idx] = 255;
         brightData[idx + 1] = 255;
         brightData[idx + 2] = 255;
-        brightData[idx + 3] = Math.round(Math.min(1, addAlpha) * 255);
+        brightData[idx + 3] = Math.round(
+          Math.min(255, Math.max(0, Math.min(1, addAlpha) * 255 + dither)),
+        );
       }
 
       // --- C. 1px Surface-Normal Specular Rim ---
@@ -385,11 +406,11 @@ export function LiquidGlass({
   const stdDev = (frost * 0.35).toFixed(2);
 
   // --- TWEAK DROP SHADOWS HERE ---
-  // DS 1 & 2: x: ±1.25, y: 0, blur: 0, spread: -0.75 -> 0.5px left & right edges, #D0D0D0 (1 - 208/255 = 0.184)
+  // DS 1 & 2: x: ±1.25, y: 0, blur: 0, spread: -0.75 -> 1px left & right edges at half #D0D0D0 strength
   const ds12Width = 1;
   const ds12Sub = 0.092;
 
-  // DS 3: x: 0, y: 0, blur: 0, spread: 0.5 -> 0.5px all around, #CCCCCC (1 - 204/255 = 0.20)
+  // DS 3: x: 0, y: 0, blur: 0, spread: 0.5 -> 1px all around at half #CCCCCC strength
   const ds3Width = 1;
   const ds3Sub = 0.1;
 
@@ -441,6 +462,12 @@ export function LiquidGlass({
               width="256"
               height="256"
               preserveAspectRatio="none"
+              result="dispMapRaw"
+            />
+            <feGaussianBlur
+              in="dispMapRaw"
+              stdDeviation="2.0"
+              edgeMode="duplicate"
               result="dispMap"
             />
             <feDisplacementMap
