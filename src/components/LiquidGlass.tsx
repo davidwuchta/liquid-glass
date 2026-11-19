@@ -415,6 +415,7 @@ interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
   lightAngle?: number;
   lightOpacity?: number;
   radius?: number;
+  contentClassName?: string;
 }
 
 export function LiquidGlass({
@@ -427,6 +428,7 @@ export function LiquidGlass({
   lightOpacity = GLASS_CONFIG.defaults.lightOpacity,
   radius,
   className = "",
+  contentClassName = "",
   children,
   style,
   ...props
@@ -765,7 +767,9 @@ export function LiquidGlass({
       />
 
       {/* Content Slot */}
-      <div className="relative z-10 h-full w-full">{children}</div>
+      <div className={`relative z-10 h-full w-full ${contentClassName}`}>
+        {children}
+      </div>
     </div>
   );
 }
