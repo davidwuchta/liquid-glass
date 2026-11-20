@@ -58,21 +58,31 @@ const CONTENT_SLOT_STYLE: React.CSSProperties = {
   width: "100%",
 };
 
+function sanitizeIdPart(value: number | string): string {
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 export interface LiquidGlassProps
   extends React.ComponentPropsWithRef<"div">, LiquidGlassConfig {
+  /** Color theme calibrated for dark or light surfaces. @default "dark" */
   theme?: GlassTheme;
+  /** Glass preset variant. Automatically defaults to `"tinted"` when `tint` is provided without `variant`. @default "clear" */
   variant?: GlassVariant;
+  /** Tint preset name or custom hex color (e.g. `"purple"` or `"#FF2D55"`). Automatically switches `variant` to `"tinted"` unless `variant` is explicitly set. @default "blue" */
   tint?: GlassTintColor | (string & {});
+  /** Explicit corner radius in pixels. Omit to use CSS / Tailwind border-radius utilities. */
   radius?: number;
+  /** Class name applied to the inner `z-10` content slot. */
   contentClassName?: string;
+  /** Inline styles applied to the inner `z-10` content slot. */
   contentStyle?: React.CSSProperties;
 }
 
 export function LiquidGlass({
   ref,
   theme = GLASS_CONFIG.defaults.theme,
-  variant = GLASS_CONFIG.defaults.variant,
-  tint = GLASS_CONFIG.defaults.tint,
+  variant,
+  tint,
   refraction,
   depth,
   dispersion,
@@ -94,7 +104,11 @@ export function LiquidGlass({
   style,
   ...props
 }: LiquidGlassProps) {
-  const preset = resolvePreset(theme, variant, {
+  const resolvedVariant: GlassVariant =
+    variant ?? (tint !== undefined ? "tinted" : GLASS_CONFIG.defaults.variant);
+  const resolvedTint = tint ?? GLASS_CONFIG.defaults.tint;
+
+  const preset = resolvePreset(theme, resolvedVariant, {
     refraction,
     depth,
     dispersion,
@@ -127,6 +141,11 @@ export function LiquidGlass({
   } = preset;
 
   const hasSolidBacking = Boolean(resolvedBackingColor);
+  const needsDisplacement =
+    !hasSolidBacking && (resolvedRefraction !== 0 || resolvedDispersion !== 0);
+  const hasDispersion = resolvedDispersion !== 0;
+  const hasFrost = resolvedFrost > 0;
+  const styleBorderRadius = style?.borderRadius;
 
   // Primitive extraction keeps useEffect immune to inline object literal re-renders
   const {
@@ -158,9 +177,9 @@ export function LiquidGlass({
     exp: rimExp,
   } = rimCfg;
 
-  const isTinted = variant === "tinted";
+  const isTinted = resolvedVariant === "tinted";
   const tintHex = isTinted
-    ? (GLASS_TINT_PRESETS[tint as GlassTintColor] ?? tint)
+    ? (GLASS_TINT_PRESETS[resolvedTint as GlassTintColor] ?? resolvedTint)
     : null;
   const [tintR, tintG, tintB] = tintHex ? parseHexColor(tintHex) : [0, 0, 0];
   const tintSubR = (1 - tintR / 255).toFixed(4);
@@ -169,8 +188,8 @@ export function LiquidGlass({
 
   const rawId = useId();
   const cleanId = rawId.replace(/:/g, "");
-  const dsSidesFilterId = `lg-ds-sides-${cleanId}-${dsCfg.sides.intensity}`;
-  const dsAllFilterId = `lg-ds-all-${cleanId}-${dsCfg.all.intensity}`;
+  const dsSidesFilterId = `lg-ds-sides-${cleanId}-${sanitizeIdPart(dsCfg.sides.intensity)}`;
+  const dsAllFilterId = `lg-ds-all-${cleanId}-${sanitizeIdPart(dsCfg.all.intensity)}`;
   const tintFilterId = tintHex
     ? `lg-tint-${cleanId}-${tintHex.replace(/[^a-zA-Z0-9]/g, "")}`
     : "";
@@ -195,7 +214,7 @@ export function LiquidGlass({
     const svgBackdrop = detectSvgBackdropSupport();
     const cssPlusDarker = detectCssPlusDarkerSupport();
     const layerConfig = {
-      hasSolidBacking,
+      needsDisplacement,
       bevel: {
         shadeRadiusFactor,
         shadeDepthMin,
@@ -283,11 +302,12 @@ export function LiquidGlass({
     };
   }, [
     radius,
+    styleBorderRadius,
     resolvedDepth,
     resolvedSplay,
     resolvedLightAngle,
     resolvedLightOpacity,
-    hasSolidBacking,
+    needsDisplacement,
     shadeRadiusFactor,
     shadeDepthMin,
     shadeDepthFactor,
@@ -315,10 +335,10 @@ export function LiquidGlass({
   const fallbackDarkBlend: React.CSSProperties["mixBlendMode"] =
     layers?.cssPlusDarker ? "plus-darker" : "normal";
 
-  const activeFilterId = `lg-${cleanId}-v${layers?.version ?? 0}-${resolvedRefraction}-${resolvedDispersion}-${resolvedFrost}`;
+  const activeFilterId = `lg-${cleanId}-v${layers?.version ?? 0}-${sanitizeIdPart(resolvedRefraction)}-${sanitizeIdPart(resolvedDispersion)}-${sanitizeIdPart(resolvedFrost)}`;
   const glassBackdrop = useSvg
     ? `url(#${activeFilterId})`
-    : hasSolidBacking
+    : hasSolidBacking || !hasFrost
       ? undefined
       : `blur(${resolvedFrost * refCfg.fallbackBlurFactor}px)`;
 
@@ -328,6 +348,15 @@ export function LiquidGlass({
   const scaleG = baseScale.toFixed(2);
   const scaleB = (baseScale + chromaOffset).toFixed(2);
   const stdDev = (resolvedFrost * refCfg.frostStdDevFactor).toFixed(2);
+
+  const blurResult = hasFrost ? "blurred" : "SourceGraphic";
+  const dispResult = needsDisplacement
+    ? hasDispersion
+      ? "rgb"
+      : "disp"
+    : blurResult;
+  const hasBrightenLayer =
+    Boolean(layers) && (bottomBrightenScale > 0 || isLightIntensity > 0);
 
   const resolvedBoxShadow =
     dsCfg.ambient && style?.boxShadow
@@ -349,7 +378,7 @@ export function LiquidGlass({
       {useSvg && layers && (
         <svg width="0" height="0" style={SVG_STYLE} aria-hidden="true">
           <defs>
-            {/* Main Glass Filter (full refraction + dispersion, or lightweight darken-only on solid backing) */}
+            {/* Main Glass Filter (3-channel dispersion, single-pass displacement, or darken-only) */}
             <filter
               id={activeFilterId}
               x="0"
@@ -360,14 +389,17 @@ export function LiquidGlass({
               primitiveUnits="userSpaceOnUse"
               colorInterpolationFilters="sRGB"
             >
-              {!hasSolidBacking && (
+              {!hasSolidBacking && hasFrost && (
+                <feGaussianBlur
+                  in="SourceGraphic"
+                  stdDeviation={stdDev}
+                  edgeMode="duplicate"
+                  result="blurred"
+                />
+              )}
+
+              {needsDisplacement && layers.displacementUrl && (
                 <>
-                  <feGaussianBlur
-                    in="SourceGraphic"
-                    stdDeviation={stdDev}
-                    edgeMode="duplicate"
-                    result="blurred"
-                  />
                   <feImage
                     x="0"
                     y="0"
@@ -383,50 +415,63 @@ export function LiquidGlass({
                     edgeMode="duplicate"
                     result="dispMap"
                   />
-                  <feDisplacementMap
-                    in="blurred"
-                    in2="dispMap"
-                    scale={scaleR}
-                    xChannelSelector="R"
-                    yChannelSelector="G"
-                    result="dispR"
-                  />
-                  <feColorMatrix
-                    in="dispR"
-                    type="matrix"
-                    values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
-                    result="r"
-                  />
-                  <feDisplacementMap
-                    in="blurred"
-                    in2="dispMap"
-                    scale={scaleG}
-                    xChannelSelector="R"
-                    yChannelSelector="G"
-                    result="dispG"
-                  />
-                  <feColorMatrix
-                    in="dispG"
-                    type="matrix"
-                    values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
-                    result="g"
-                  />
-                  <feDisplacementMap
-                    in="blurred"
-                    in2="dispMap"
-                    scale={scaleB}
-                    xChannelSelector="R"
-                    yChannelSelector="G"
-                    result="dispB"
-                  />
-                  <feColorMatrix
-                    in="dispB"
-                    type="matrix"
-                    values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
-                    result="b"
-                  />
-                  <feBlend in="r" in2="g" mode="screen" result="rg" />
-                  <feBlend in="rg" in2="b" mode="screen" result="rgb" />
+                  {hasDispersion ? (
+                    <>
+                      <feDisplacementMap
+                        in={blurResult}
+                        in2="dispMap"
+                        scale={scaleR}
+                        xChannelSelector="R"
+                        yChannelSelector="G"
+                        result="dispR"
+                      />
+                      <feColorMatrix
+                        in="dispR"
+                        type="matrix"
+                        values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                        result="r"
+                      />
+                      <feDisplacementMap
+                        in={blurResult}
+                        in2="dispMap"
+                        scale={scaleG}
+                        xChannelSelector="R"
+                        yChannelSelector="G"
+                        result="dispG"
+                      />
+                      <feColorMatrix
+                        in="dispG"
+                        type="matrix"
+                        values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                        result="g"
+                      />
+                      <feDisplacementMap
+                        in={blurResult}
+                        in2="dispMap"
+                        scale={scaleB}
+                        xChannelSelector="R"
+                        yChannelSelector="G"
+                        result="dispB"
+                      />
+                      <feColorMatrix
+                        in="dispB"
+                        type="matrix"
+                        values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
+                        result="b"
+                      />
+                      <feBlend in="r" in2="g" mode="screen" result="rg" />
+                      <feBlend in="rg" in2="b" mode="screen" result="rgb" />
+                    </>
+                  ) : (
+                    <feDisplacementMap
+                      in={blurResult}
+                      in2="dispMap"
+                      scale={scaleG}
+                      xChannelSelector="R"
+                      yChannelSelector="G"
+                      result="disp"
+                    />
+                  )}
                 </>
               )}
 
@@ -440,7 +485,7 @@ export function LiquidGlass({
                 result="darkMap"
               />
               <feComposite
-                in={hasSolidBacking ? "SourceGraphic" : "rgb"}
+                in={hasSolidBacking ? "SourceGraphic" : dispResult}
                 in2="darkMap"
                 operator="arithmetic"
                 k1="0"
@@ -642,22 +687,24 @@ export function LiquidGlass({
       ))}
 
       {/* 2. Additive Brightening + Inner Shadows 1 & 2 (mixBlendMode: "plus-lighter") */}
-      <div
-        style={{
-          ...LAYER_BG_STYLE,
-          mixBlendMode: "plus-lighter",
-          backgroundImage: layers ? `url(${layers.brightenUrl})` : undefined,
-        }}
-      />
+      {hasBrightenLayer && layers && (
+        <div
+          style={{
+            ...LAYER_BG_STYLE,
+            mixBlendMode: "plus-lighter",
+            backgroundImage: `url(${layers.brightenUrl})`,
+          }}
+        />
+      )}
 
       {/* 3. Surface-Normal Specular Rim */}
-      {rimCfg.enabled && (
+      {layers && rimCfg.enabled && (
         <div
           style={{
             ...LAYER_BG_STYLE,
             ...RING_MASK_STYLE,
             padding: `${rimCfg.widthPx}px`,
-            backgroundImage: layers ? `url(${layers.rimUrl})` : undefined,
+            backgroundImage: `url(${layers.rimUrl})`,
           }}
         />
       )}

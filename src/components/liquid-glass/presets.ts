@@ -27,14 +27,17 @@ export interface GlassFill {
 export function parseHexColor(hex: string): [number, number, number] {
   const clean = hex.replace("#", "").trim();
   const full =
-    clean.length === 3
+    clean.length === 3 || clean.length === 4
       ? clean
+          .slice(0, 3)
           .split("")
           .map((c) => c + c)
           .join("")
-      : clean;
+      : clean.length === 8
+        ? clean.slice(0, 6)
+        : clean;
   const num = parseInt(full, 16);
-  if (Number.isNaN(num)) return [0, 136, 255];
+  if (full.length !== 6 || Number.isNaN(num)) return [0, 136, 255];
   return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
 }
 
@@ -189,18 +192,31 @@ export type DropShadowOverride =
     };
 
 export interface LiquidGlassConfig {
+  /** Strength of the edge lens displacement (0–100). @default 70 */
   refraction?: number;
+  /** Width of the refracting glass bevel in pixels. @default 30 */
   depth?: number;
+  /** RGB chromatic aberration spread at the edges (0 disables multi-channel dispersion). @default 20 */
   dispersion?: number;
+  /** Backdrop blur intensity. @default 6 (16 on "opaque") */
   frost?: number;
+  /** Curve sharpness of the bevel falloff (0–100). @default 20 */
   splay?: number;
+  /** Specular rim and bevel lighting direction in degrees. @default 0 */
   lightAngle?: number;
+  /** Master brightness of the specular rim and bevel shading (0–100). @default 25 */
   lightOpacity?: number;
+  /** Solid backing color rendered behind the glass, or `false` to disable. */
   backingColor?: string | false;
+  /** Bevel shading overrides, or `false` to disable. */
   bevel?: BevelOverride;
+  /** Inner shadow overrides (`light` and `dark`), deep-merged with the active preset, or `false` to disable all. */
   innerShadow?: InnerShadowOverride;
+  /** Specular rim highlight overrides, or `false` to disable. */
   rim?: RimOverride;
+  /** Drop shadow overrides (`sides`, `all`, and `ambient`), deep-merged with the active preset, or `false` to disable all. */
   dropShadow?: DropShadowOverride;
+  /** Glass body fills rendered bottom-to-top (replaces preset fills), or `false` to remove all fills. */
   fills?: GlassFill[] | false;
 }
 

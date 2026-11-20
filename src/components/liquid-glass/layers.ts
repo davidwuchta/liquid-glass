@@ -20,7 +20,7 @@ export interface LayerState extends CachedLayers {
 }
 
 export interface LayerShadingConfig {
-  hasSolidBacking: boolean;
+  needsDisplacement: boolean;
   bevel: ResolvedPreset["bevel"];
   innerShadow: ResolvedPreset["innerShadow"];
   rim: Pick<ResolvedPreset["rim"], "primaryScale" | "bounceScale" | "exp">;
@@ -80,6 +80,16 @@ export function detectCssPlusDarkerSupport(): boolean {
   return cachedCssPlusDarkerSupport;
 }
 
+function createCanvas2D(w: number, h: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const img = ctx.createImageData(w, h);
+  return { canvas, ctx, img, data: img.data };
+}
+
 export function getOrGenerateLayers(
   w: number,
   h: number,
@@ -93,7 +103,7 @@ export function getOrGenerateLayers(
 ): CachedLayers {
   const refCfg = GLASS_CONFIG.refraction;
   const {
-    hasSolidBacking,
+    needsDisplacement,
     bevel: bevelCfg,
     innerShadow: { light: isLightCfg, dark: isDarkCfg },
     rim: rimCfg,
@@ -103,7 +113,7 @@ export function getOrGenerateLayers(
   const ry = h / 2;
   const r = Math.min(radius, rx, ry);
 
-  const needsDisp = svgBackdrop && !hasSolidBacking;
+  const needsDisp = svgBackdrop && needsDisplacement;
   const dispKey = `${w}x${h}-${r}-${depth}-${splay}`;
   const shadingKey = [
     `${w}x${h}`,
@@ -147,59 +157,42 @@ export function getOrGenerateLayers(
     };
   }
 
-  // 1. Displacement Map Canvas (Chromium without solid backing only)
-  let dispCanvas: HTMLCanvasElement | null = null;
-  let dispCtx: CanvasRenderingContext2D | null = null;
-  let dispImg: ImageData | null = null;
-  let dispData: Uint8ClampedArray | null = null;
-  if (computeDisp) {
-    dispCanvas = document.createElement("canvas");
-    dispCanvas.width = w;
-    dispCanvas.height = h;
-    dispCtx = dispCanvas.getContext("2d")!;
-    dispImg = dispCtx.createImageData(w, h);
-    dispData = dispImg.data;
-  }
+  // 1. Displacement Map Canvas (Chromium with active refraction/dispersion only)
+  const dispSurface = computeDisp ? createCanvas2D(w, h) : null;
+  const dispData = dispSurface?.data ?? null;
 
   // 2 & 3. Shading & Rim Canvases
-  let darkCanvas: HTMLCanvasElement | null = null;
-  let darkCtx: CanvasRenderingContext2D | null = null;
-  let darkImg: ImageData | null = null;
-  let darkData: Uint8ClampedArray | null = null;
-
-  let brightCanvas: HTMLCanvasElement | null = null;
-  let brightCtx: CanvasRenderingContext2D | null = null;
-  let brightImg: ImageData | null = null;
-  let brightData: Uint8ClampedArray | null = null;
-
-  let rimCanvas: HTMLCanvasElement | null = null;
-  let rimCtx: CanvasRenderingContext2D | null = null;
-  let rimImg: ImageData | null = null;
-  let rimData: Uint8ClampedArray | null = null;
+  let darkSurface: ReturnType<typeof createCanvas2D> = null;
+  let brightSurface: ReturnType<typeof createCanvas2D> = null;
+  let rimSurface: ReturnType<typeof createCanvas2D> = null;
 
   if (computeShading) {
-    darkCanvas = document.createElement("canvas");
-    darkCanvas.width = w;
-    darkCanvas.height = h;
-    darkCtx = darkCanvas.getContext("2d")!;
-    darkImg = darkCtx.createImageData(w, h);
-    darkData = darkImg.data;
-    if (svgBackdrop) darkData.fill(255);
-
-    brightCanvas = document.createElement("canvas");
-    brightCanvas.width = w;
-    brightCanvas.height = h;
-    brightCtx = brightCanvas.getContext("2d")!;
-    brightImg = brightCtx.createImageData(w, h);
-    brightData = brightImg.data;
-
-    rimCanvas = document.createElement("canvas");
-    rimCanvas.width = w;
-    rimCanvas.height = h;
-    rimCtx = rimCanvas.getContext("2d")!;
-    rimImg = rimCtx.createImageData(w, h);
-    rimData = rimImg.data;
+    darkSurface = createCanvas2D(w, h);
+    brightSurface = createCanvas2D(w, h);
+    rimSurface = createCanvas2D(w, h);
+    if (!darkSurface || !brightSurface || !rimSurface) {
+      return {
+        displacementUrl: cachedDisp ?? "",
+        darkenUrl: "",
+        brightenUrl: "",
+        rimUrl: "",
+      };
+    }
+    if (svgBackdrop) darkSurface.data.fill(255);
   }
+
+  if (computeDisp && !dispSurface) {
+    return {
+      displacementUrl: "",
+      darkenUrl: cachedShading?.darkenUrl ?? "",
+      brightenUrl: cachedShading?.brightenUrl ?? "",
+      rimUrl: cachedShading?.rimUrl ?? "",
+    };
+  }
+
+  const darkData = darkSurface?.data ?? null;
+  const brightData = brightSurface?.data ?? null;
+  const rimData = rimSurface?.data ?? null;
 
   const bevel = Math.max(1, depth);
   const rShade = Math.min(
@@ -246,8 +239,8 @@ export function getOrGenerateLayers(
 
   const maxShadeDist = Math.max(shadeDepth, isLightCfg.depth, isDarkCfg.depth);
   const maxComputeDist = Math.max(
-    computeDisp ? bevel : 0,
-    computeShading ? Math.max(maxShadeDist, 3) : 0,
+    dispData ? bevel : 0,
+    darkData ? Math.max(maxShadeDist, 3) : 0,
   );
 
   for (let y = 0; y < h; y++) {
@@ -420,32 +413,21 @@ export function getOrGenerateLayers(
   }
 
   let displacementUrl = cachedDisp ?? "";
-  if (computeDisp && dispCanvas && dispCtx && dispImg) {
-    dispCtx.putImageData(dispImg, 0, 0);
-    displacementUrl = dispCanvas.toDataURL();
+  if (dispSurface) {
+    dispSurface.ctx.putImageData(dispSurface.img, 0, 0);
+    displacementUrl = dispSurface.canvas.toDataURL();
     lruSet(dispCache, dispKey, displacementUrl);
   }
 
   let shading: ShadingLayers;
-  if (
-    computeShading &&
-    darkCanvas &&
-    darkCtx &&
-    darkImg &&
-    brightCanvas &&
-    brightCtx &&
-    brightImg &&
-    rimCanvas &&
-    rimCtx &&
-    rimImg
-  ) {
-    darkCtx.putImageData(darkImg, 0, 0);
-    brightCtx.putImageData(brightImg, 0, 0);
-    rimCtx.putImageData(rimImg, 0, 0);
+  if (darkSurface && brightSurface && rimSurface) {
+    darkSurface.ctx.putImageData(darkSurface.img, 0, 0);
+    brightSurface.ctx.putImageData(brightSurface.img, 0, 0);
+    rimSurface.ctx.putImageData(rimSurface.img, 0, 0);
     shading = {
-      darkenUrl: darkCanvas.toDataURL(),
-      brightenUrl: brightCanvas.toDataURL(),
-      rimUrl: rimCanvas.toDataURL(),
+      darkenUrl: darkSurface.canvas.toDataURL(),
+      brightenUrl: brightSurface.canvas.toDataURL(),
+      rimUrl: rimSurface.canvas.toDataURL(),
     };
     lruSet(shadingCache, shadingKey, shading);
   } else {
