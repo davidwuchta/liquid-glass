@@ -43,3 +43,10 @@ next-env.d.ts
 # local development files
 *.bat
 *.txt
+
+node_modules/
+dist/
+playground/node_modules/
+playground/.next/
+playground/out/
+playground/next-env.d.ts

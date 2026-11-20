@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { Draggable } from "@/components/Draggable";
-import { LiquidGlass } from "@/components/LiquidGlass";
+import { LiquidGlass } from "liquid-glass";
 
 import ImgHomeBg from "@/assets/images/img-home-bg-06.jpg";
 

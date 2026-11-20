@@ -1,23 +1,23 @@
 import { Draggable } from "@/components/Draggable";
-import { LiquidGlass } from "@/components/LiquidGlass";
+import { LiquidGlass } from "liquid-glass";
 
-export const Light = () => {
+export const Dark = () => {
   return (
-    <section className="relative bg-white w-full h-screen flex">
+    <section className="relative bg-black w-full h-screen flex">
       <div className="flex flex-2">
-        <div className="w-25 bg-black/60"></div>
-        <div className="w-25 bg-black/50"></div>
-        <div className="w-25 bg-black/40"></div>
-        <div className="w-25 bg-black/30"></div>
-        <div className="w-25 bg-black/20"></div>
-        <div className="w-25 bg-black/10"></div>
+        <div className="w-25 bg-white/60"></div>
+        <div className="w-25 bg-white/50"></div>
+        <div className="w-25 bg-white/40"></div>
+        <div className="w-25 bg-white/30"></div>
+        <div className="w-25 bg-white/20"></div>
+        <div className="w-25 bg-white/10"></div>
       </div>
-      <div className="flex-1 bg-white"></div>
+      <div className="flex-1 bg-black"></div>
       <div className="absolute top-0 left-0 w-full h-full flex flex-col gap-14 justify-center px-10 py-18">
         <div className="flex gap-5">
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="clear"
               radius={1000}
               className="w-20 h-12"
@@ -25,7 +25,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="clear"
               radius={1000}
               className="w-20 h-12"
@@ -33,7 +33,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="clear"
               radius={1000}
               className="w-20 h-12"
@@ -41,7 +41,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="clear"
               radius={1000}
               className="w-20 h-12"
@@ -49,7 +49,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="clear"
               radius={1000}
               className="w-20 h-12"
@@ -57,7 +57,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="clear"
               radius={1000}
               className="w-20 h-12"
@@ -67,7 +67,7 @@ export const Light = () => {
         <div className="flex gap-5">
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="tinted"
               tint="green"
               radius={1000}
@@ -76,7 +76,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="tinted"
               tint="yellow"
               radius={1000}
@@ -85,7 +85,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="tinted"
               tint="orange"
               radius={1000}
@@ -94,7 +94,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="tinted"
               tint="red"
               radius={1000}
@@ -103,7 +103,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="tinted"
               tint="purple"
               radius={1000}
@@ -112,7 +112,7 @@ export const Light = () => {
           </Draggable>
           <Draggable>
             <LiquidGlass
-              theme="light"
+              theme="dark"
               variant="tinted"
               tint="blue"
               radius={1000}
@@ -122,7 +122,7 @@ export const Light = () => {
         </div>
         <Draggable>
           <LiquidGlass
-            theme="light"
+            theme="dark"
             variant="opaque"
             radius={34}
             className="w-146.25 h-45"
@@ -130,7 +130,7 @@ export const Light = () => {
         </Draggable>
         <Draggable>
           <LiquidGlass
-            theme="light"
+            theme="dark"
             variant="opaque"
             radius={34}
             className="w-146.25 h-75"

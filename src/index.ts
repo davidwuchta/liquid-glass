@@ -1,4 +1,4 @@
-export { LiquidGlass, type LiquidGlassProps } from "./liquid-glass/LiquidGlass";
+export { LiquidGlass, type LiquidGlassProps } from "./LiquidGlass";
 export {
   GLASS_CONFIG,
   GLASS_PRESETS,
@@ -17,4 +17,4 @@ export {
   type LiquidGlassConfig,
   type ResolvedPreset,
   type RimOverride,
-} from "./liquid-glass/presets";
+} from "./presets";
