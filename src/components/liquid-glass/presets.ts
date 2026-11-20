@@ -38,6 +38,26 @@ export function parseHexColor(hex: string): [number, number, number] {
   return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
 }
 
+function hexToLuma(hex: string): number {
+  const [r, g, b] = parseHexColor(hex);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+// Calibrated to Figma's 1px integer Plus-Darker drop shadow rings (#CCCCCC -> 0.1, #D0D0D0 -> 0.092, #E8E8E8 -> 0.045)
+export function hexToDropShadowSub(hex: string): number {
+  return Number(((1 - hexToLuma(hex)) / 2).toFixed(4));
+}
+
+// Calibrated to Figma's Plus-Lighter inner shadows (#1A1A1A -> 0.08, #282828 -> 0.123)
+export function hexToInnerShadowLightPeak(hex: string): number {
+  return Number((hexToLuma(hex) * (0.08 / (26 / 255))).toFixed(4));
+}
+
+// Calibrated to Figma's Plus-Darker top inner shadow (#E6E6E6 -> 0.025)
+export function hexToInnerShadowDarkPeak(hex: string): number {
+  return Number(((1 - hexToLuma(hex)) * (0.025 / (25 / 255))).toFixed(4));
+}
+
 export const GLASS_CONFIG = {
   cache: {
     maxEntries: 24,
@@ -97,11 +117,15 @@ export const GLASS_CONFIG = {
   },
   dropShadow: {
     // DS 1 & 2: x: ±1.25, y: 0, blur: 0, spread: -0.75 (#D0D0D0, Plus darker)
-    sidesWidthPx: 1,
-    sidesSub: 0.092,
+    sides: {
+      widthPx: 1,
+      sub: 0.092,
+    },
     // DS 3: x: 0, y: 0, blur: 0, spread: 0.5 (#CCCCCC, Plus darker)
-    allWidthPx: 1,
-    allSub: 0.1,
+    all: {
+      widthPx: 1,
+      sub: 0.1,
+    },
     // DS 4: x: 0, y: 8, blur: 15, spread: 0 (#000000 4%, Normal)
     ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)",
   },
@@ -110,6 +134,50 @@ export const GLASS_CONFIG = {
     { color: "rgba(153, 153, 153, 0.17)", blendMode: "luminosity" },
   ] as GlassFill[],
 };
+
+export type BevelOverride =
+  | false
+  | (Partial<typeof GLASS_CONFIG.bevel> & { enabled?: boolean });
+
+export type InnerShadowLightOverride =
+  | false
+  | (Partial<typeof GLASS_CONFIG.innerShadowLight> & {
+      enabled?: boolean;
+      /** Figma hex color (Plus lighter), e.g. "#1A1A1A" or "#282828". Ignored if `peak` is also set. */
+      color?: string;
+    });
+
+export type InnerShadowDarkOverride =
+  | false
+  | (Partial<typeof GLASS_CONFIG.innerShadowDark> & {
+      enabled?: boolean;
+      /** Figma hex color (Plus darker), e.g. "#E6E6E6". Ignored if `peak` is also set. */
+      color?: string;
+    });
+
+export type RimOverride =
+  | false
+  | (Partial<typeof GLASS_CONFIG.rim> & { enabled?: boolean });
+
+export type DropShadowRingOverride =
+  | false
+  | {
+      enabled?: boolean;
+      widthPx?: number;
+      sub?: number;
+      /** Figma hex color (Plus darker), e.g. "#D0D0D0" or "#E8E8E8". Ignored if `sub` is also set. */
+      color?: string;
+    };
+
+export type DropShadowOverride =
+  | false
+  | {
+      enabled?: boolean;
+      sides?: DropShadowRingOverride;
+      all?: DropShadowRingOverride;
+      /** CSS box-shadow string, or `false` to disable. */
+      ambient?: string | false;
+    };
 
 export interface PresetOverride {
   refraction?: number;
@@ -120,12 +188,12 @@ export interface PresetOverride {
   lightAngle?: number;
   lightOpacity?: number;
   backingColor?: string;
-  bevel?: Partial<typeof GLASS_CONFIG.bevel>;
-  innerShadowLight?: Partial<typeof GLASS_CONFIG.innerShadowLight>;
-  innerShadowDark?: Partial<typeof GLASS_CONFIG.innerShadowDark>;
-  rim?: Partial<typeof GLASS_CONFIG.rim>;
-  dropShadow?: Partial<typeof GLASS_CONFIG.dropShadow>;
-  fills?: GlassFill[];
+  bevel?: BevelOverride;
+  innerShadowLight?: InnerShadowLightOverride;
+  innerShadowDark?: InnerShadowDarkOverride;
+  rim?: RimOverride;
+  dropShadow?: DropShadowOverride;
+  fills?: GlassFill[] | false;
 }
 
 export const GLASS_PRESETS: Record<
@@ -136,8 +204,8 @@ export const GLASS_PRESETS: Record<
     clear: {
       innerShadowLight: { peak: 0.08 },
       dropShadow: {
-        sidesSub: 0.092, // #D0D0D0
-        allSub: 0.1, // #CCCCCC
+        sides: { sub: 0.092 }, // #D0D0D0
+        all: { sub: 0.1 }, // #CCCCCC
         ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)",
       },
       fills: [
@@ -147,10 +215,10 @@ export const GLASS_PRESETS: Record<
     opaque: {
       frost: 16,
       innerShadowLight: { peak: 0.08 },
-      innerShadowDark: { peak: 0 },
+      innerShadowDark: false,
       dropShadow: {
-        sidesSub: 0.092, // #D0D0D0
-        allSub: 0.1, // #CCCCCC
+        sides: { sub: 0.092 }, // #D0D0D0
+        all: { sub: 0.1 }, // #CCCCCC
         ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)",
       },
       // Ordered bottom-to-top (reverse of Figma's top-to-bottom Fill panel)
@@ -165,8 +233,8 @@ export const GLASS_PRESETS: Record<
       backingColor: "#FFFFFF",
       innerShadowLight: { peak: 0.08 },
       dropShadow: {
-        sidesSub: 0.092, // #D0D0D0
-        allSub: 0, // Disabled
+        sides: { sub: 0.092 }, // #D0D0D0
+        all: false,
         ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)",
       },
       fills: [],
@@ -176,8 +244,8 @@ export const GLASS_PRESETS: Record<
     clear: {
       innerShadowLight: { peak: 0.123 },
       dropShadow: {
-        sidesSub: 0.092, // #D0D0D0
-        allSub: 0.045, // #E8E8E8
+        sides: { sub: 0.092 }, // #D0D0D0
+        all: { sub: 0.045 }, // #E8E8E8
         ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)",
       },
       // Ordered bottom-to-top (reverse of Figma's top-to-bottom Fill panel)
@@ -191,10 +259,10 @@ export const GLASS_PRESETS: Record<
     opaque: {
       frost: 16,
       innerShadowLight: { peak: 0.123 },
-      innerShadowDark: { peak: 0 },
+      innerShadowDark: false,
       dropShadow: {
-        sidesSub: 0.092, // #D0D0D0
-        allSub: 0.045, // #E8E8E8
+        sides: { sub: 0.092 }, // #D0D0D0
+        all: { sub: 0.045 }, // #E8E8E8
         ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)",
       },
       // Ordered bottom-to-top (reverse of Figma's top-to-bottom Fill panel)
@@ -208,8 +276,8 @@ export const GLASS_PRESETS: Record<
       backingColor: "#FFFFFF",
       innerShadowLight: { peak: 0.123 },
       dropShadow: {
-        sidesSub: 0.092, // #D0D0D0
-        allSub: 0, // Disabled
+        sides: { sub: 0.092 }, // #D0D0D0
+        all: false,
         ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)",
       },
       fills: [],
@@ -217,29 +285,230 @@ export const GLASS_PRESETS: Record<
   },
 };
 
-export function resolvePreset(theme: GlassTheme, variant: GlassVariant) {
-  const override = GLASS_PRESETS[theme][variant];
+function isLayerEnabled(
+  base: { enabled?: boolean } | false | undefined,
+  override: { enabled?: boolean } | false | undefined,
+): boolean {
+  if (override === false) return false;
+  if (override !== undefined) return override.enabled ?? true;
+  if (base === false) return false;
+  return base?.enabled ?? true;
+}
+
+function resolveBevel(base?: BevelOverride, override?: BevelOverride) {
+  const enabled = isLayerEnabled(base, override);
+  const merged = {
+    ...GLASS_CONFIG.bevel,
+    ...(base || undefined),
+    ...(override || undefined),
+  };
   return {
-    refraction: override.refraction ?? GLASS_CONFIG.defaults.refraction,
-    depth: override.depth ?? GLASS_CONFIG.defaults.depth,
-    dispersion: override.dispersion ?? GLASS_CONFIG.defaults.dispersion,
-    frost: override.frost ?? GLASS_CONFIG.defaults.frost,
-    splay: override.splay ?? GLASS_CONFIG.defaults.splay,
-    lightAngle: override.lightAngle ?? GLASS_CONFIG.defaults.lightAngle,
-    lightOpacity: override.lightOpacity ?? GLASS_CONFIG.defaults.lightOpacity,
-    backingColor: override.backingColor,
-    bevel: { ...GLASS_CONFIG.bevel, ...override.bevel },
-    innerShadowLight: {
-      ...GLASS_CONFIG.innerShadowLight,
-      ...override.innerShadowLight,
-    },
-    innerShadowDark: {
-      ...GLASS_CONFIG.innerShadowDark,
-      ...override.innerShadowDark,
-    },
-    rim: { ...GLASS_CONFIG.rim, ...override.rim },
-    dropShadow: { ...GLASS_CONFIG.dropShadow, ...override.dropShadow },
-    fills: override.fills ?? GLASS_CONFIG.fills,
+    shadeRadiusFactor: merged.shadeRadiusFactor,
+    shadeDepthMin: merged.shadeDepthMin,
+    shadeDepthFactor: merged.shadeDepthFactor,
+    topDarkenScale: enabled ? merged.topDarkenScale : 0,
+    topProfileExp: merged.topProfileExp,
+    topDirExp: merged.topDirExp,
+    bottomBrightenScale: enabled ? merged.bottomBrightenScale : 0,
+    bottomProfileExp: merged.bottomProfileExp,
+    bottomDirExp: merged.bottomDirExp,
+  };
+}
+
+function resolveInnerShadowLight(
+  base?: InnerShadowLightOverride,
+  override?: InnerShadowLightOverride,
+) {
+  const enabled = isLayerEnabled(base, override);
+  const baseObj = base || undefined;
+  const overrideObj = override || undefined;
+  const merged = {
+    ...GLASS_CONFIG.innerShadowLight,
+    ...baseObj,
+    ...overrideObj,
+  };
+  let peak = merged.peak;
+  if (overrideObj?.peak === undefined && overrideObj?.color !== undefined) {
+    peak = hexToInnerShadowLightPeak(overrideObj.color);
+  } else if (
+    overrideObj?.peak === undefined &&
+    baseObj?.peak === undefined &&
+    baseObj?.color !== undefined
+  ) {
+    peak = hexToInnerShadowLightPeak(baseObj.color);
+  }
+  return {
+    depth: merged.depth,
+    peak: enabled ? peak : 0,
+    falloff: merged.falloff,
+    dirExp: merged.dirExp,
+  };
+}
+
+function resolveInnerShadowDark(
+  base?: InnerShadowDarkOverride,
+  override?: InnerShadowDarkOverride,
+) {
+  const enabled = isLayerEnabled(base, override);
+  const baseObj = base || undefined;
+  const overrideObj = override || undefined;
+  const merged = {
+    ...GLASS_CONFIG.innerShadowDark,
+    ...baseObj,
+    ...overrideObj,
+  };
+  let peak = merged.peak;
+  if (overrideObj?.peak === undefined && overrideObj?.color !== undefined) {
+    peak = hexToInnerShadowDarkPeak(overrideObj.color);
+  } else if (
+    overrideObj?.peak === undefined &&
+    baseObj?.peak === undefined &&
+    baseObj?.color !== undefined
+  ) {
+    peak = hexToInnerShadowDarkPeak(baseObj.color);
+  }
+  return {
+    depth: merged.depth,
+    peak: enabled ? peak : 0,
+    falloff: merged.falloff,
+    dirExp: merged.dirExp,
+  };
+}
+
+function resolveRim(base?: RimOverride, override?: RimOverride) {
+  const enabled = isLayerEnabled(base, override);
+  const merged = {
+    ...GLASS_CONFIG.rim,
+    ...(base || undefined),
+    ...(override || undefined),
+  };
+  return {
+    enabled,
+    primaryScale: enabled ? merged.primaryScale : 0,
+    bounceScale: enabled ? merged.bounceScale : 0,
+    exp: merged.exp,
+    widthPx: enabled ? merged.widthPx : 0,
+  };
+}
+
+function resolveDropShadowRing(
+  defaults: { widthPx: number; sub: number },
+  base?: DropShadowRingOverride,
+  override?: DropShadowRingOverride,
+) {
+  const enabled = isLayerEnabled(base, override);
+  const baseObj = base || undefined;
+  const overrideObj = override || undefined;
+
+  const widthPx = overrideObj?.widthPx ?? baseObj?.widthPx ?? defaults.widthPx;
+  let sub = overrideObj?.sub ?? baseObj?.sub ?? defaults.sub;
+  if (overrideObj?.sub === undefined && overrideObj?.color !== undefined) {
+    sub = hexToDropShadowSub(overrideObj.color);
+  } else if (
+    overrideObj?.sub === undefined &&
+    baseObj?.sub === undefined &&
+    baseObj?.color !== undefined
+  ) {
+    sub = hexToDropShadowSub(baseObj.color);
+  }
+
+  return {
+    enabled: enabled && sub > 0 && widthPx > 0,
+    widthPx: enabled ? widthPx : 0,
+    sub: enabled ? sub : 0,
+  };
+}
+
+function resolveDropShadow(
+  base?: DropShadowOverride,
+  override?: DropShadowOverride,
+) {
+  if (!isLayerEnabled(base, override)) {
+    return {
+      sides: { enabled: false, widthPx: 0, sub: 0 },
+      all: { enabled: false, widthPx: 0, sub: 0 },
+      ambient: undefined as string | undefined,
+    };
+  }
+
+  const baseObj = base || undefined;
+  const overrideObj = override || undefined;
+
+  let ambient: string | undefined;
+  if (overrideObj?.ambient === false) {
+    ambient = undefined;
+  } else if (overrideObj?.ambient !== undefined) {
+    ambient = overrideObj.ambient || undefined;
+  } else if (baseObj?.ambient === false) {
+    ambient = undefined;
+  } else {
+    ambient = baseObj?.ambient ?? GLASS_CONFIG.dropShadow.ambient;
+  }
+
+  return {
+    sides: resolveDropShadowRing(
+      GLASS_CONFIG.dropShadow.sides,
+      baseObj?.sides,
+      overrideObj?.sides,
+    ),
+    all: resolveDropShadowRing(
+      GLASS_CONFIG.dropShadow.all,
+      baseObj?.all,
+      overrideObj?.all,
+    ),
+    ambient,
+  };
+}
+
+export function resolvePreset(
+  theme: GlassTheme,
+  variant: GlassVariant,
+  overrides?: PresetOverride,
+) {
+  const base = GLASS_PRESETS[theme][variant];
+  const fills =
+    overrides?.fills === false
+      ? []
+      : (overrides?.fills ??
+        (base.fills === false ? [] : base.fills) ??
+        GLASS_CONFIG.fills);
+
+  return {
+    refraction:
+      overrides?.refraction ??
+      base.refraction ??
+      GLASS_CONFIG.defaults.refraction,
+    depth: overrides?.depth ?? base.depth ?? GLASS_CONFIG.defaults.depth,
+    dispersion:
+      overrides?.dispersion ??
+      base.dispersion ??
+      GLASS_CONFIG.defaults.dispersion,
+    frost: overrides?.frost ?? base.frost ?? GLASS_CONFIG.defaults.frost,
+    splay: overrides?.splay ?? base.splay ?? GLASS_CONFIG.defaults.splay,
+    lightAngle:
+      overrides?.lightAngle ??
+      base.lightAngle ??
+      GLASS_CONFIG.defaults.lightAngle,
+    lightOpacity:
+      overrides?.lightOpacity ??
+      base.lightOpacity ??
+      GLASS_CONFIG.defaults.lightOpacity,
+    backingColor:
+      overrides?.backingColor !== undefined
+        ? overrides.backingColor || undefined
+        : base.backingColor,
+    bevel: resolveBevel(base.bevel, overrides?.bevel),
+    innerShadowLight: resolveInnerShadowLight(
+      base.innerShadowLight,
+      overrides?.innerShadowLight,
+    ),
+    innerShadowDark: resolveInnerShadowDark(
+      base.innerShadowDark,
+      overrides?.innerShadowDark,
+    ),
+    rim: resolveRim(base.rim, overrides?.rim),
+    dropShadow: resolveDropShadow(base.dropShadow, overrides?.dropShadow),
+    fills,
   };
 }
 

@@ -18,6 +18,14 @@ export interface LayerState extends CachedLayers {
   cssPlusDarker: boolean;
 }
 
+export interface LayerShadingConfig {
+  hasSolidBacking: boolean;
+  bevel: ResolvedPreset["bevel"];
+  innerShadowLight: ResolvedPreset["innerShadowLight"];
+  innerShadowDark: ResolvedPreset["innerShadowDark"];
+  rim: Pick<ResolvedPreset["rim"], "primaryScale" | "bounceScale" | "exp">;
+}
+
 const dispCache = new Map<string, string>();
 const shadingCache = new Map<string, ShadingLayers>();
 
@@ -80,24 +88,52 @@ export function getOrGenerateLayers(
   splay: number,
   lightAngle: number,
   lightOpacity: number,
-  preset: ResolvedPreset,
+  config: LayerShadingConfig,
   svgBackdrop: boolean,
 ): CachedLayers {
   const refCfg = GLASS_CONFIG.refraction;
   const {
+    hasSolidBacking,
     bevel: bevelCfg,
     innerShadowLight: isLightCfg,
     innerShadowDark: isDarkCfg,
     rim: rimCfg,
-  } = preset;
+  } = config;
 
   const rx = w / 2;
   const ry = h / 2;
   const r = Math.min(radius, rx, ry);
 
-  const needsDisp = svgBackdrop && !preset.backingColor;
+  const needsDisp = svgBackdrop && !hasSolidBacking;
   const dispKey = `${w}x${h}-${r}-${depth}-${splay}`;
-  const shadingKey = `${w}x${h}-${r}-${depth}-${lightAngle}-${lightOpacity}-${isLightCfg.peak}-${isDarkCfg.peak}-${svgBackdrop ? 1 : 0}`;
+  const shadingKey = [
+    `${w}x${h}`,
+    r,
+    depth,
+    lightAngle,
+    lightOpacity,
+    bevelCfg.shadeRadiusFactor,
+    bevelCfg.shadeDepthMin,
+    bevelCfg.shadeDepthFactor,
+    bevelCfg.topDarkenScale,
+    bevelCfg.topProfileExp,
+    bevelCfg.topDirExp,
+    bevelCfg.bottomBrightenScale,
+    bevelCfg.bottomProfileExp,
+    bevelCfg.bottomDirExp,
+    isLightCfg.depth,
+    isLightCfg.peak,
+    isLightCfg.falloff,
+    isLightCfg.dirExp,
+    isDarkCfg.depth,
+    isDarkCfg.peak,
+    isDarkCfg.falloff,
+    isDarkCfg.dirExp,
+    rimCfg.primaryScale,
+    rimCfg.bounceScale,
+    rimCfg.exp,
+    svgBackdrop ? 1 : 0,
+  ].join("-");
 
   const cachedDisp = needsDisp ? lruGet(dispCache, dispKey) : "";
   const cachedShading = lruGet(shadingCache, shadingKey);
@@ -309,7 +345,11 @@ export function getOrGenerateLayers(
 
         // Inner Shadows 1 & 2 (Top + Bottom, Plus lighter)
         const verticalDot = Math.abs(sNormY);
-        if (verticalDot > 0 && distFromEdge < isLightCfg.depth) {
+        if (
+          isLightCfg.peak > 0 &&
+          verticalDot > 0 &&
+          distFromEdge < isLightCfg.depth
+        ) {
           const innerT = Math.max(
             0,
             1 - Math.max(0, distFromEdge - 1) / isLightCfg.depth,
