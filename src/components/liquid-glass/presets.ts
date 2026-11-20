@@ -134,12 +134,11 @@ export const GLASS_PRESETS: Record<
 > = {
   dark: {
     clear: {
-      // #1A1A1A (26/255)
       innerShadowLight: { peak: 0.08 },
       dropShadow: {
         sidesSub: 0.092, // #D0D0D0
         allSub: 0.1, // #CCCCCC
-        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)", // #000000 4%
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)",
       },
       fills: [
         { color: "rgba(153, 153, 153, 0.17)", blendMode: "luminosity" }, // #999999 17%
@@ -152,13 +151,13 @@ export const GLASS_PRESETS: Record<
       dropShadow: {
         sidesSub: 0.092, // #D0D0D0
         allSub: 0.1, // #CCCCCC
-        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)", // #000000 4%
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)",
       },
       // Ordered bottom-to-top (reverse of Figma's top-to-bottom Fill panel)
       fills: [
-        { color: "rgba(26, 26, 26, 0.7)", blendMode: "luminosity" }, // 3rd: #1A1A1A 70%
-        { color: "rgba(26, 26, 26, 0.9)", blendMode: "luminosity" }, // 2nd: #1A1A1A 90%
-        { color: "rgba(26, 26, 26, 1)", blendMode: "lighten" }, // 1st: #1A1A1A 100%
+        { color: "rgba(26, 26, 26, 0.7)", blendMode: "luminosity" }, // 3: #1A1A1A 70%
+        { color: "rgba(26, 26, 26, 0.9)", blendMode: "luminosity" }, // 2: #1A1A1A 90%
+        { color: "rgba(26, 26, 26, 1)", blendMode: "lighten" }, // 1: #1A1A1A 100%
       ],
     },
     tinted: {
@@ -166,28 +165,27 @@ export const GLASS_PRESETS: Record<
       backingColor: "#FFFFFF",
       innerShadowLight: { peak: 0.08 },
       dropShadow: {
-        sidesSub: 0.092, // Light Clear (#D0D0D0)
+        sidesSub: 0.092, // #D0D0D0
         allSub: 0, // Disabled
-        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)", // Dark Clear (#000000 4%)
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)",
       },
       fills: [],
     },
   },
   light: {
     clear: {
-      // #282828 (40/255) -> 0.08 * (40 / 26)
       innerShadowLight: { peak: 0.123 },
       dropShadow: {
         sidesSub: 0.092, // #D0D0D0
         allSub: 0.045, // #E8E8E8
-        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)", // #000000 2%
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)",
       },
       // Ordered bottom-to-top (reverse of Figma's top-to-bottom Fill panel)
       fills: [
-        { color: "rgba(0, 0, 0, 0.25)", blendMode: "normal" }, // 4th: #000000 25%
-        { color: "rgba(255, 255, 255, 0.25)", blendMode: "normal" }, // 3rd: #FFFFFF 25%
-        { color: "rgba(68, 68, 68, 0.6)", blendMode: "plus-lighter" }, // 2nd: #444444 60%
-        { color: "rgba(248, 248, 248, 0.2)", blendMode: "luminosity" }, // 1st: #F8F8F8 20%
+        { color: "rgba(0, 0, 0, 0.25)", blendMode: "normal" }, // 4: #000000 25%
+        { color: "rgba(255, 255, 255, 0.25)", blendMode: "normal" }, // 3: #FFFFFF 25%
+        { color: "rgba(68, 68, 68, 0.6)", blendMode: "plus-lighter" }, // 2: #444444 60%
+        { color: "rgba(248, 248, 248, 0.2)", blendMode: "luminosity" }, // 1: #F8F8F8 20%
       ],
     },
     opaque: {
@@ -197,12 +195,12 @@ export const GLASS_PRESETS: Record<
       dropShadow: {
         sidesSub: 0.092, // #D0D0D0
         allSub: 0.045, // #E8E8E8
-        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)", // #000000 2%
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)",
       },
       // Ordered bottom-to-top (reverse of Figma's top-to-bottom Fill panel)
       fills: [
-        { color: "rgba(255, 255, 255, 0.7)", blendMode: "lighten" }, // 2nd: #FFFFFF 70%
-        { color: "rgba(191, 191, 191, 0.1)", blendMode: "darken" }, // 1st: #BFBFBF 10%
+        { color: "rgba(255, 255, 255, 0.7)", blendMode: "lighten" }, // 2: #FFFFFF 70%
+        { color: "rgba(191, 191, 191, 0.1)", blendMode: "darken" }, // 1: #BFBFBF 10%
       ],
     },
     tinted: {
@@ -210,9 +208,9 @@ export const GLASS_PRESETS: Record<
       backingColor: "#FFFFFF",
       innerShadowLight: { peak: 0.123 },
       dropShadow: {
-        sidesSub: 0.092, // Light Clear (#D0D0D0)
+        sidesSub: 0.092, // #D0D0D0
         allSub: 0, // Disabled
-        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)", // Light Clear (#000000 2%)
+        ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.02)",
       },
       fills: [],
     },

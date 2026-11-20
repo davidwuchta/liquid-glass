@@ -35,6 +35,7 @@ export const ImageBG = () => {
               theme="light"
               variant="opaque"
               dispersion={0}
+              frost={90}
               radius={64}
               className="w-64 h-32"
               contentClassName="flex items-center justify-center"
@@ -49,6 +50,7 @@ export const ImageBG = () => {
               theme="dark"
               variant="opaque"
               dispersion={0}
+              frost={90}
               radius={64}
               className="w-64 h-32"
               contentClassName="flex items-center justify-center"
