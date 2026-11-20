@@ -360,11 +360,13 @@ export function LiquidGlass({
     layers?.cssPlusDarker ? "plus-darker" : "normal";
 
   const hasDarkenLayer =
-    (resolvedLightOpacity > 0 && topDarkenScale > 0) || isDarkIntensity > 0;
+    Boolean(layers?.darkenUrl) &&
+    ((resolvedLightOpacity > 0 && topDarkenScale > 0) || isDarkIntensity > 0);
   const hasBrightenLayer =
-    Boolean(layers) &&
+    Boolean(layers?.brightenUrl) &&
     ((resolvedLightOpacity > 0 && bottomBrightenScale > 0) ||
       isLightIntensity > 0);
+  const hasRimLayer = Boolean(layers?.rimUrl) && rimCfg.enabled;
   const hasDisplacementPass =
     needsDisplacement && Boolean(layers?.displacementUrl);
   const needsMainSvgFilter = hasSolidBacking
@@ -376,7 +378,7 @@ export function LiquidGlass({
     dsCfg.sides.enabled ||
     Boolean(tintHex);
 
-  const activeFilterId = `lg-${cleanId}-v${layers?.version ?? 0}-${sanitizeIdPart(resolvedRefraction)}-${sanitizeIdPart(resolvedDispersion)}-${sanitizeIdPart(resolvedFrost)}`;
+  const activeFilterId = `lg-${cleanId}-v${layers?.version ?? 0}-${hasSolidBacking ? 1 : 0}-${sanitizeIdPart(resolvedRefraction)}-${sanitizeIdPart(resolvedDispersion)}-${sanitizeIdPart(resolvedFrost)}`;
   const glassBackdrop = useSvg
     ? needsMainSvgFilter
       ? `url(#${activeFilterId})`
@@ -745,7 +747,7 @@ export function LiquidGlass({
       )}
 
       {/* 3. Surface-Normal Specular Rim */}
-      {layers && rimCfg.enabled && (
+      {hasRimLayer && layers && (
         <div
           style={{
             ...LAYER_BG_STYLE,

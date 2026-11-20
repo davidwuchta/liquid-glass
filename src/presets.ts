@@ -192,7 +192,7 @@ export type DropShadowOverride =
     };
 
 export interface LiquidGlassConfig {
-  /** Strength of the edge lens displacement (0–100). @default 70 */
+  /** Strength of the edge lens displacement (0-100). @default 70 */
   refraction?: number;
   /** Width of the refracting glass bevel in pixels. @default 30 */
   depth?: number;
@@ -200,11 +200,11 @@ export interface LiquidGlassConfig {
   dispersion?: number;
   /** Backdrop blur intensity. @default 6 (16 on "opaque") */
   frost?: number;
-  /** Curve sharpness of the bevel falloff (0–100). @default 20 */
+  /** Curve sharpness of the bevel falloff (0-100). @default 20 */
   splay?: number;
   /** Specular rim and bevel lighting direction in degrees. @default 0 */
   lightAngle?: number;
-  /** Master brightness of the specular rim and bevel shading (0–100). @default 25 */
+  /** Master brightness of the specular rim and bevel shading (0-100). @default 25 */
   lightOpacity?: number;
   /** Solid backing color rendered behind the glass, or `false` to disable. */
   backingColor?: string | false;
