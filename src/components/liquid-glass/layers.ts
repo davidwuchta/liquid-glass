@@ -11,6 +11,7 @@ export interface CachedLayers extends ShadingLayers {
 }
 
 export interface LayerState extends CachedLayers {
+  version: number;
   w: number;
   h: number;
   radius: number;
@@ -21,8 +22,7 @@ export interface LayerState extends CachedLayers {
 export interface LayerShadingConfig {
   hasSolidBacking: boolean;
   bevel: ResolvedPreset["bevel"];
-  innerShadowLight: ResolvedPreset["innerShadowLight"];
-  innerShadowDark: ResolvedPreset["innerShadowDark"];
+  innerShadow: ResolvedPreset["innerShadow"];
   rim: Pick<ResolvedPreset["rim"], "primaryScale" | "bounceScale" | "exp">;
 }
 
@@ -95,8 +95,7 @@ export function getOrGenerateLayers(
   const {
     hasSolidBacking,
     bevel: bevelCfg,
-    innerShadowLight: isLightCfg,
-    innerShadowDark: isDarkCfg,
+    innerShadow: { light: isLightCfg, dark: isDarkCfg },
     rim: rimCfg,
   } = config;
 
@@ -122,11 +121,11 @@ export function getOrGenerateLayers(
     bevelCfg.bottomProfileExp,
     bevelCfg.bottomDirExp,
     isLightCfg.depth,
-    isLightCfg.peak,
+    isLightCfg.intensity,
     isLightCfg.falloff,
     isLightCfg.dirExp,
     isDarkCfg.depth,
-    isDarkCfg.peak,
+    isDarkCfg.intensity,
     isDarkCfg.falloff,
     isDarkCfg.dirExp,
     rimCfg.primaryScale,
@@ -346,7 +345,7 @@ export function getOrGenerateLayers(
         // Inner Shadows 1 & 2 (Top + Bottom, Plus lighter)
         const verticalDot = Math.abs(sNormY);
         if (
-          isLightCfg.peak > 0 &&
+          isLightCfg.intensity > 0 &&
           verticalDot > 0 &&
           distFromEdge < isLightCfg.depth
         ) {
@@ -356,13 +355,13 @@ export function getOrGenerateLayers(
           );
           const profile = Math.pow(innerT, isLightCfg.falloff);
           const dir = Math.pow(verticalDot, isLightCfg.dirExp);
-          addAlpha += isLightCfg.peak * profile * dir;
+          addAlpha += isLightCfg.intensity * profile * dir;
         }
 
         // Inner Shadow 3 (Top only: #E6E6E6, Plus darker)
         const topVerticalDot = -sNormY;
         if (
-          isDarkCfg.peak > 0 &&
+          isDarkCfg.intensity > 0 &&
           topVerticalDot > 0 &&
           distFromEdge < isDarkCfg.depth
         ) {
@@ -372,7 +371,7 @@ export function getOrGenerateLayers(
           );
           const profile = Math.pow(innerT3, isDarkCfg.falloff);
           const dir = Math.pow(topVerticalDot, isDarkCfg.dirExp);
-          darkSub += isDarkCfg.peak * profile * dir;
+          darkSub += isDarkCfg.intensity * profile * dir;
         }
       }
 

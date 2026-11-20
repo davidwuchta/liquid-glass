@@ -13,7 +13,8 @@ export {
   type GlassVariant,
   type InnerShadowDarkOverride,
   type InnerShadowLightOverride,
-  type PresetOverride,
+  type InnerShadowOverride,
+  type LiquidGlassConfig,
   type ResolvedPreset,
   type RimOverride,
 } from "./liquid-glass/presets";

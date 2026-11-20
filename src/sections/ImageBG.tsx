@@ -60,6 +60,17 @@ export const ImageBG = () => {
               </p>
             </LiquidGlass>
           </Draggable>
+          <Draggable>
+            <LiquidGlass
+              theme="dark"
+              variant="clear"
+              dispersion={0}
+              frost={90}
+              radius={64}
+              className="w-64 h-32"
+              contentClassName="flex items-center justify-center"
+            />
+          </Draggable>
         </div>
       </main>
     </section>

@@ -15,7 +15,7 @@ import {
   type GlassTheme,
   type GlassTintColor,
   type GlassVariant,
-  type PresetOverride,
+  type LiquidGlassConfig,
 } from "./presets";
 
 const SVG_STYLE: React.CSSProperties = {
@@ -59,7 +59,7 @@ const CONTENT_SLOT_STYLE: React.CSSProperties = {
 };
 
 export interface LiquidGlassProps
-  extends React.HTMLAttributes<HTMLDivElement>, PresetOverride {
+  extends React.ComponentPropsWithRef<"div">, LiquidGlassConfig {
   theme?: GlassTheme;
   variant?: GlassVariant;
   tint?: GlassTintColor | (string & {});
@@ -69,6 +69,7 @@ export interface LiquidGlassProps
 }
 
 export function LiquidGlass({
+  ref,
   theme = GLASS_CONFIG.defaults.theme,
   variant = GLASS_CONFIG.defaults.variant,
   tint = GLASS_CONFIG.defaults.tint,
@@ -81,8 +82,7 @@ export function LiquidGlass({
   lightOpacity,
   backingColor,
   bevel,
-  innerShadowLight,
-  innerShadowDark,
+  innerShadow,
   rim,
   dropShadow,
   fills: fillsOverride,
@@ -104,8 +104,7 @@ export function LiquidGlass({
     lightOpacity,
     backingColor,
     bevel,
-    innerShadowLight,
-    innerShadowDark,
+    innerShadow,
     rim,
     dropShadow,
     fills: fillsOverride,
@@ -121,8 +120,7 @@ export function LiquidGlass({
     lightOpacity: resolvedLightOpacity,
     backingColor: resolvedBackingColor,
     bevel: bevelCfg,
-    innerShadowLight: isLightCfg,
-    innerShadowDark: isDarkCfg,
+    innerShadow: { light: isLightCfg, dark: isDarkCfg },
     rim: rimCfg,
     dropShadow: dsCfg,
     fills,
@@ -144,13 +142,13 @@ export function LiquidGlass({
   } = bevelCfg;
   const {
     depth: isLightDepth,
-    peak: isLightPeak,
+    intensity: isLightIntensity,
     falloff: isLightFalloff,
     dirExp: isLightDirExp,
   } = isLightCfg;
   const {
     depth: isDarkDepth,
-    peak: isDarkPeak,
+    intensity: isDarkIntensity,
     falloff: isDarkFalloff,
     dirExp: isDarkDirExp,
   } = isDarkCfg;
@@ -171,14 +169,24 @@ export function LiquidGlass({
 
   const rawId = useId();
   const cleanId = rawId.replace(/:/g, "");
-  const dsSidesFilterId = `lg-ds-sides-${cleanId}-${dsCfg.sides.sub}`;
-  const dsAllFilterId = `lg-ds-all-${cleanId}-${dsCfg.all.sub}`;
+  const dsSidesFilterId = `lg-ds-sides-${cleanId}-${dsCfg.sides.intensity}`;
+  const dsAllFilterId = `lg-ds-all-${cleanId}-${dsCfg.all.intensity}`;
   const tintFilterId = tintHex
     ? `lg-tint-${cleanId}-${tintHex.replace(/[^a-zA-Z0-9]/g, "")}`
     : "";
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [layers, setLayers] = useState<LayerState | null>(null);
+
+  const setContainerRef = (node: HTMLDivElement | null) => {
+    containerRef.current = node;
+    if (typeof ref === "function") {
+      return ref(node);
+    }
+    if (ref) {
+      ref.current = node;
+    }
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -199,17 +207,19 @@ export function LiquidGlass({
         bottomProfileExp,
         bottomDirExp,
       },
-      innerShadowLight: {
-        depth: isLightDepth,
-        peak: isLightPeak,
-        falloff: isLightFalloff,
-        dirExp: isLightDirExp,
-      },
-      innerShadowDark: {
-        depth: isDarkDepth,
-        peak: isDarkPeak,
-        falloff: isDarkFalloff,
-        dirExp: isDarkDirExp,
+      innerShadow: {
+        light: {
+          depth: isLightDepth,
+          intensity: isLightIntensity,
+          falloff: isLightFalloff,
+          dirExp: isLightDirExp,
+        },
+        dark: {
+          depth: isDarkDepth,
+          intensity: isDarkIntensity,
+          falloff: isDarkFalloff,
+          dirExp: isDarkDirExp,
+        },
       },
       rim: {
         primaryScale: rimPrimaryScale,
@@ -228,8 +238,7 @@ export function LiquidGlass({
       const h = container.clientHeight;
       const computedRadius =
         radius ??
-        (parseFloat(getComputedStyle(container).borderTopLeftRadius) ||
-          GLASS_CONFIG.defaults.radius);
+        (parseFloat(getComputedStyle(container).borderTopLeftRadius) || 0);
 
       if (
         w <= 0 ||
@@ -255,14 +264,15 @@ export function LiquidGlass({
           layerConfig,
           svgBackdrop,
         );
-        setLayers({
+        setLayers((prev) => ({
+          version: (prev?.version ?? 0) + 1,
           w,
           h,
           radius: Math.min(computedRadius, w / 2, h / 2),
           svgBackdrop,
           cssPlusDarker,
           ...generated,
-        });
+        }));
       });
     });
 
@@ -288,11 +298,11 @@ export function LiquidGlass({
     bottomProfileExp,
     bottomDirExp,
     isLightDepth,
-    isLightPeak,
+    isLightIntensity,
     isLightFalloff,
     isLightDirExp,
     isDarkDepth,
-    isDarkPeak,
+    isDarkIntensity,
     isDarkFalloff,
     isDarkDirExp,
     rimPrimaryScale,
@@ -305,7 +315,7 @@ export function LiquidGlass({
   const fallbackDarkBlend: React.CSSProperties["mixBlendMode"] =
     layers?.cssPlusDarker ? "plus-darker" : "normal";
 
-  const activeFilterId = `lg-${cleanId}-${theme}-${variant}-${hasSolidBacking ? 1 : 0}-${layers?.w ?? 0}x${layers?.h ?? 0}-${layers?.radius ?? "css"}-${resolvedRefraction}-${resolvedDepth}-${resolvedDispersion}-${resolvedFrost}-${resolvedSplay}-${resolvedLightAngle}-${resolvedLightOpacity}-${topDarkenScale}-${isDarkPeak}`;
+  const activeFilterId = `lg-${cleanId}-v${layers?.version ?? 0}-${resolvedRefraction}-${resolvedDispersion}-${resolvedFrost}`;
   const glassBackdrop = useSvg
     ? `url(#${activeFilterId})`
     : hasSolidBacking
@@ -326,11 +336,10 @@ export function LiquidGlass({
 
   return (
     <div
-      ref={containerRef}
+      ref={setContainerRef}
       className={className || undefined}
       style={{
         position: "relative",
-        borderRadius: `${GLASS_CONFIG.defaults.radius}px`,
         ...style,
         ...(radius !== undefined ? { borderRadius: `${radius}px` } : {}),
         ...(resolvedBoxShadow ? { boxShadow: resolvedBoxShadow } : {}),
@@ -446,9 +455,21 @@ export function LiquidGlass({
             {dsCfg.all.enabled && (
               <filter id={dsAllFilterId} colorInterpolationFilters="sRGB">
                 <feComponentTransfer>
-                  <feFuncR type="linear" slope="1" intercept={-dsCfg.all.sub} />
-                  <feFuncG type="linear" slope="1" intercept={-dsCfg.all.sub} />
-                  <feFuncB type="linear" slope="1" intercept={-dsCfg.all.sub} />
+                  <feFuncR
+                    type="linear"
+                    slope="1"
+                    intercept={-dsCfg.all.intensity}
+                  />
+                  <feFuncG
+                    type="linear"
+                    slope="1"
+                    intercept={-dsCfg.all.intensity}
+                  />
+                  <feFuncB
+                    type="linear"
+                    slope="1"
+                    intercept={-dsCfg.all.intensity}
+                  />
                 </feComponentTransfer>
               </filter>
             )}
@@ -460,17 +481,17 @@ export function LiquidGlass({
                   <feFuncR
                     type="linear"
                     slope="1"
-                    intercept={-dsCfg.sides.sub}
+                    intercept={-dsCfg.sides.intensity}
                   />
                   <feFuncG
                     type="linear"
                     slope="1"
-                    intercept={-dsCfg.sides.sub}
+                    intercept={-dsCfg.sides.intensity}
                   />
                   <feFuncB
                     type="linear"
                     slope="1"
-                    intercept={-dsCfg.sides.sub}
+                    intercept={-dsCfg.sides.intensity}
                   />
                 </feComponentTransfer>
               </filter>
@@ -520,7 +541,7 @@ export function LiquidGlass({
                   WebkitBackdropFilter: `url(#${dsAllFilterId})`,
                 }
               : {
-                  backgroundColor: `rgba(0, 0, 0, ${dsCfg.all.sub})`,
+                  backgroundColor: `rgba(0, 0, 0, ${dsCfg.all.intensity})`,
                   mixBlendMode: fallbackDarkBlend,
                 }),
           }}
@@ -548,7 +569,7 @@ export function LiquidGlass({
                   WebkitBackdropFilter: `url(#${dsSidesFilterId})`,
                 }
               : {
-                  backgroundColor: `rgba(0, 0, 0, ${dsCfg.sides.sub})`,
+                  backgroundColor: `rgba(0, 0, 0, ${dsCfg.sides.intensity})`,
                   mixBlendMode: fallbackDarkBlend,
                 }),
           }}
