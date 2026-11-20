@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState, useCallback } from "react";
 import {
   detectCssPlusDarkerSupport,
   detectSvgBackdropSupport,
@@ -197,15 +197,18 @@ export function LiquidGlass({
   const containerRef = useRef<HTMLDivElement>(null);
   const [layers, setLayers] = useState<LayerState | null>(null);
 
-  const setContainerRef = (node: HTMLDivElement | null) => {
-    containerRef.current = node;
-    if (typeof ref === "function") {
-      return ref(node);
-    }
-    if (ref) {
-      ref.current = node;
-    }
-  };
+  const setContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      containerRef.current = node;
+      if (typeof ref === "function") {
+        return ref(node);
+      }
+      if (ref) {
+        ref.current = node;
+      }
+    },
+    [ref],
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -283,15 +286,32 @@ export function LiquidGlass({
           layerConfig,
           svgBackdrop,
         );
-        setLayers((prev) => ({
-          version: (prev?.version ?? 0) + 1,
-          w,
-          h,
-          radius: Math.min(computedRadius, w / 2, h / 2),
-          svgBackdrop,
-          cssPlusDarker,
-          ...generated,
-        }));
+        const clampedRadius = Math.min(computedRadius, w / 2, h / 2);
+        setLayers((prev) => {
+          if (
+            prev &&
+            prev.w === w &&
+            prev.h === h &&
+            prev.radius === clampedRadius &&
+            prev.svgBackdrop === svgBackdrop &&
+            prev.cssPlusDarker === cssPlusDarker &&
+            prev.displacementUrl === generated.displacementUrl &&
+            prev.darkenUrl === generated.darkenUrl &&
+            prev.brightenUrl === generated.brightenUrl &&
+            prev.rimUrl === generated.rimUrl
+          ) {
+            return prev;
+          }
+          return {
+            version: (prev?.version ?? 0) + 1,
+            w,
+            h,
+            radius: clampedRadius,
+            svgBackdrop,
+            cssPlusDarker,
+            ...generated,
+          };
+        });
       });
     });
 
@@ -303,6 +323,7 @@ export function LiquidGlass({
   }, [
     radius,
     styleBorderRadius,
+    className,
     resolvedDepth,
     resolvedSplay,
     resolvedLightAngle,
