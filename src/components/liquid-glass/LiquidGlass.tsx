@@ -17,6 +17,46 @@ import {
   type GlassVariant,
 } from "./presets";
 
+const SVG_STYLE: React.CSSProperties = {
+  pointerEvents: "none",
+  position: "absolute",
+  left: 0,
+  top: 0,
+  overflow: "visible",
+};
+
+const RING_BASE_STYLE: React.CSSProperties = {
+  pointerEvents: "none",
+  position: "absolute",
+};
+
+const RING_MASK_STYLE: React.CSSProperties = {
+  WebkitMask:
+    "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+  WebkitMaskComposite: "xor",
+  maskComposite: "exclude",
+};
+
+const LAYER_BASE_STYLE: React.CSSProperties = {
+  pointerEvents: "none",
+  position: "absolute",
+  inset: 0,
+  borderRadius: "inherit",
+};
+
+const LAYER_BG_STYLE: React.CSSProperties = {
+  ...LAYER_BASE_STYLE,
+  backgroundSize: "cover",
+  backgroundPosition: "center",
+};
+
+const CONTENT_SLOT_STYLE: React.CSSProperties = {
+  position: "relative",
+  zIndex: 10,
+  height: "100%",
+  width: "100%",
+};
+
 export interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
   theme?: GlassTheme;
   variant?: GlassVariant;
@@ -30,6 +70,7 @@ export interface LiquidGlassProps extends React.HTMLAttributes<HTMLDivElement> {
   lightOpacity?: number;
   radius?: number;
   contentClassName?: string;
+  contentStyle?: React.CSSProperties;
 }
 
 export function LiquidGlass({
@@ -44,8 +85,9 @@ export function LiquidGlass({
   lightAngle,
   lightOpacity,
   radius,
-  className = "",
-  contentClassName = "",
+  className,
+  contentClassName,
+  contentStyle,
   children,
   style,
   ...props
@@ -175,23 +217,20 @@ export function LiquidGlass({
   return (
     <div
       ref={containerRef}
+      className={className || undefined}
       style={{
+        position: "relative",
+        borderRadius: `${GLASS_CONFIG.defaults.radius}px`,
         ...style,
         ...(radius !== undefined ? { borderRadius: `${radius}px` } : {}),
         boxShadow: style?.boxShadow
           ? `${dsCfg.ambient}, ${style.boxShadow}`
           : dsCfg.ambient,
       }}
-      className={`relative ${radius === undefined ? "rounded-[23px]" : ""} ${className}`}
       {...props}
     >
       {useSvg && layers && (
-        <svg
-          width="0"
-          height="0"
-          className="pointer-events-none absolute left-0 top-0 overflow-visible"
-          aria-hidden="true"
-        >
+        <svg width="0" height="0" style={SVG_STYLE} aria-hidden="true">
           <defs>
             {/* Main Glass Filter (full refraction + dispersion, or lightweight darken-only on solid backing) */}
             <filter
@@ -344,8 +383,9 @@ export function LiquidGlass({
       {/* 0A. Drop Shadow 3 (All-around outer ring) */}
       {layers && dsCfg.allSub > 0 && (
         <div
-          className="pointer-events-none absolute"
           style={{
+            ...RING_BASE_STYLE,
+            ...RING_MASK_STYLE,
             inset: `-${dsCfg.allWidthPx}px`,
             padding: `${dsCfg.allWidthPx}px`,
             borderRadius:
@@ -361,10 +401,6 @@ export function LiquidGlass({
                   backgroundColor: `rgba(0, 0, 0, ${dsCfg.allSub})`,
                   mixBlendMode: fallbackDarkBlend,
                 }),
-            WebkitMask:
-              "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
-            WebkitMaskComposite: "xor",
-            maskComposite: "exclude",
           }}
         />
       )}
@@ -372,8 +408,9 @@ export function LiquidGlass({
       {/* 0B. Drop Shadows 1 & 2 (Left & Right outer rings) */}
       {layers && (
         <div
-          className="pointer-events-none absolute"
           style={{
+            ...RING_BASE_STYLE,
+            ...RING_MASK_STYLE,
             top: 0,
             bottom: 0,
             left: `-${dsCfg.sidesWidthPx}px`,
@@ -392,10 +429,6 @@ export function LiquidGlass({
                   backgroundColor: `rgba(0, 0, 0, ${dsCfg.sidesSub})`,
                   mixBlendMode: fallbackDarkBlend,
                 }),
-            WebkitMask:
-              "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
-            WebkitMaskComposite: "xor",
-            maskComposite: "exclude",
           }}
         />
       )}
@@ -403,16 +436,19 @@ export function LiquidGlass({
       {/* 0C. Solid Backing (Tinted variant: 100% white behind the glass) */}
       {preset.backingColor && (
         <div
-          className="pointer-events-none absolute inset-0 rounded-[inherit]"
-          style={{ backgroundColor: preset.backingColor }}
+          style={{
+            ...LAYER_BASE_STYLE,
+            backgroundColor: preset.backingColor,
+          }}
         />
       )}
 
       {/* 1. Glass Backdrop (+ True GPU Plus-Darker Pass in Chromium) */}
       {glassBackdrop && (
         <div
-          className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
           style={{
+            ...LAYER_BASE_STYLE,
+            overflow: "hidden",
             backdropFilter: glassBackdrop,
             WebkitBackdropFilter: glassBackdrop,
           }}
@@ -422,8 +458,8 @@ export function LiquidGlass({
       {/* 1A. Non-Chromium Top Darkening + Inner Shadow 3 Fallback */}
       {!useSvg && layers && (
         <div
-          className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
           style={{
+            ...LAYER_BG_STYLE,
             backgroundImage: `url(${layers.darkenUrl})`,
             mixBlendMode: fallbackDarkBlend,
           }}
@@ -433,9 +469,9 @@ export function LiquidGlass({
       {/* 1B. Tinted Variant Fill (100% Tint Color, Plus Darker) */}
       {tintHex && (
         <div
-          className="pointer-events-none absolute inset-0 rounded-[inherit]"
-          style={
-            useSvg
+          style={{
+            ...LAYER_BASE_STYLE,
+            ...(useSvg
               ? {
                   backdropFilter: `url(#${tintFilterId})`,
                   WebkitBackdropFilter: `url(#${tintFilterId})`,
@@ -445,8 +481,8 @@ export function LiquidGlass({
                   mixBlendMode: layers?.cssPlusDarker
                     ? "plus-darker"
                     : "multiply",
-                }
-          }
+                }),
+          }}
         />
       )}
 
@@ -454,8 +490,8 @@ export function LiquidGlass({
       {fills.map((fill, index) => (
         <div
           key={index}
-          className="pointer-events-none absolute inset-0 rounded-[inherit]"
           style={{
+            ...LAYER_BASE_STYLE,
             backgroundColor: fill.color,
             mixBlendMode: fill.blendMode ?? "normal",
           }}
@@ -464,8 +500,8 @@ export function LiquidGlass({
 
       {/* 2. Additive Brightening + Inner Shadows 1 & 2 (mixBlendMode: "plus-lighter") */}
       <div
-        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
         style={{
+          ...LAYER_BG_STYLE,
           mixBlendMode: "plus-lighter",
           backgroundImage: layers ? `url(${layers.brightenUrl})` : undefined,
         }}
@@ -473,19 +509,23 @@ export function LiquidGlass({
 
       {/* 3. Surface-Normal Specular Rim */}
       <div
-        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-cover bg-center"
         style={{
+          ...LAYER_BG_STYLE,
+          ...RING_MASK_STYLE,
           padding: `${rimCfg.widthPx}px`,
           backgroundImage: layers ? `url(${layers.rimUrl})` : undefined,
-          WebkitMask:
-            "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
-          WebkitMaskComposite: "xor",
-          maskComposite: "exclude",
         }}
       />
 
       {/* Content Slot */}
-      <div className={`relative z-10 h-full w-full ${contentClassName}`}>
+      <div
+        className={contentClassName || undefined}
+        style={
+          contentStyle
+            ? { ...CONTENT_SLOT_STYLE, ...contentStyle }
+            : CONTENT_SLOT_STYLE
+        }
+      >
         {children}
       </div>
     </div>
