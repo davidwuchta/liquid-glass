@@ -29,11 +29,13 @@ const SVG_STYLE: React.CSSProperties = {
 const RING_BASE_STYLE: React.CSSProperties = {
   pointerEvents: "none",
   position: "absolute",
+  boxSizing: "border-box",
 };
 
 const RING_MASK_STYLE: React.CSSProperties = {
   WebkitMask:
     "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+  mask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
   WebkitMaskComposite: "xor",
   maskComposite: "exclude",
 };
@@ -43,6 +45,7 @@ const LAYER_BASE_STYLE: React.CSSProperties = {
   position: "absolute",
   inset: 0,
   borderRadius: "inherit",
+  boxSizing: "border-box",
 };
 
 const LAYER_BG_STYLE: React.CSSProperties = {
@@ -356,9 +359,28 @@ export function LiquidGlass({
   const fallbackDarkBlend: React.CSSProperties["mixBlendMode"] =
     layers?.cssPlusDarker ? "plus-darker" : "normal";
 
+  const hasDarkenLayer =
+    (resolvedLightOpacity > 0 && topDarkenScale > 0) || isDarkIntensity > 0;
+  const hasBrightenLayer =
+    Boolean(layers) &&
+    ((resolvedLightOpacity > 0 && bottomBrightenScale > 0) ||
+      isLightIntensity > 0);
+  const hasDisplacementPass =
+    needsDisplacement && Boolean(layers?.displacementUrl);
+  const needsMainSvgFilter = hasSolidBacking
+    ? hasDarkenLayer
+    : hasFrost || hasDisplacementPass || hasDarkenLayer;
+  const hasAnySvgFilter =
+    needsMainSvgFilter ||
+    dsCfg.all.enabled ||
+    dsCfg.sides.enabled ||
+    Boolean(tintHex);
+
   const activeFilterId = `lg-${cleanId}-v${layers?.version ?? 0}-${sanitizeIdPart(resolvedRefraction)}-${sanitizeIdPart(resolvedDispersion)}-${sanitizeIdPart(resolvedFrost)}`;
   const glassBackdrop = useSvg
-    ? `url(#${activeFilterId})`
+    ? needsMainSvgFilter
+      ? `url(#${activeFilterId})`
+      : undefined
     : hasSolidBacking || !hasFrost
       ? undefined
       : `blur(${resolvedFrost * refCfg.fallbackBlurFactor}px)`;
@@ -371,13 +393,11 @@ export function LiquidGlass({
   const stdDev = (resolvedFrost * refCfg.frostStdDevFactor).toFixed(2);
 
   const blurResult = hasFrost ? "blurred" : "SourceGraphic";
-  const dispResult = needsDisplacement
+  const dispResult = hasDisplacementPass
     ? hasDispersion
       ? "rgb"
       : "disp"
     : blurResult;
-  const hasBrightenLayer =
-    Boolean(layers) && (bottomBrightenScale > 0 || isLightIntensity > 0);
 
   const resolvedBoxShadow =
     dsCfg.ambient && style?.boxShadow
@@ -396,126 +416,132 @@ export function LiquidGlass({
       }}
       {...props}
     >
-      {useSvg && layers && (
+      {useSvg && layers && hasAnySvgFilter && (
         <svg width="0" height="0" style={SVG_STYLE} aria-hidden="true">
           <defs>
-            {/* Main Glass Filter (3-channel dispersion, single-pass displacement, or darken-only) */}
-            <filter
-              id={activeFilterId}
-              x="0"
-              y="0"
-              width={layers.w}
-              height={layers.h}
-              filterUnits="userSpaceOnUse"
-              primitiveUnits="userSpaceOnUse"
-              colorInterpolationFilters="sRGB"
-            >
-              {!hasSolidBacking && hasFrost && (
-                <feGaussianBlur
-                  in="SourceGraphic"
-                  stdDeviation={stdDev}
-                  edgeMode="duplicate"
-                  result="blurred"
-                />
-              )}
-
-              {needsDisplacement && layers.displacementUrl && (
-                <>
-                  <feImage
-                    x="0"
-                    y="0"
-                    width={layers.w}
-                    height={layers.h}
-                    href={layers.displacementUrl}
-                    preserveAspectRatio="none"
-                    result="dispMapRaw"
-                  />
+            {/* Main Glass Filter (3-channel dispersion, single-pass displacement, frost, and/or darken) */}
+            {needsMainSvgFilter && (
+              <filter
+                id={activeFilterId}
+                x="0"
+                y="0"
+                width={layers.w}
+                height={layers.h}
+                filterUnits="userSpaceOnUse"
+                primitiveUnits="userSpaceOnUse"
+                colorInterpolationFilters="sRGB"
+              >
+                {!hasSolidBacking && hasFrost && (
                   <feGaussianBlur
-                    in="dispMapRaw"
-                    stdDeviation={refCfg.dispMapBlurStdDev}
+                    in="SourceGraphic"
+                    stdDeviation={stdDev}
                     edgeMode="duplicate"
-                    result="dispMap"
+                    result="blurred"
                   />
-                  {hasDispersion ? (
-                    <>
-                      <feDisplacementMap
-                        in={blurResult}
-                        in2="dispMap"
-                        scale={scaleR}
-                        xChannelSelector="R"
-                        yChannelSelector="G"
-                        result="dispR"
-                      />
-                      <feColorMatrix
-                        in="dispR"
-                        type="matrix"
-                        values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
-                        result="r"
-                      />
+                )}
+
+                {hasDisplacementPass && (
+                  <>
+                    <feImage
+                      x="0"
+                      y="0"
+                      width={layers.w}
+                      height={layers.h}
+                      href={layers.displacementUrl}
+                      preserveAspectRatio="none"
+                      result="dispMapRaw"
+                    />
+                    <feGaussianBlur
+                      in="dispMapRaw"
+                      stdDeviation={refCfg.dispMapBlurStdDev}
+                      edgeMode="duplicate"
+                      result="dispMap"
+                    />
+                    {hasDispersion ? (
+                      <>
+                        <feDisplacementMap
+                          in={blurResult}
+                          in2="dispMap"
+                          scale={scaleR}
+                          xChannelSelector="R"
+                          yChannelSelector="G"
+                          result="dispR"
+                        />
+                        <feColorMatrix
+                          in="dispR"
+                          type="matrix"
+                          values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                          result="r"
+                        />
+                        <feDisplacementMap
+                          in={blurResult}
+                          in2="dispMap"
+                          scale={scaleG}
+                          xChannelSelector="R"
+                          yChannelSelector="G"
+                          result="dispG"
+                        />
+                        <feColorMatrix
+                          in="dispG"
+                          type="matrix"
+                          values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                          result="g"
+                        />
+                        <feDisplacementMap
+                          in={blurResult}
+                          in2="dispMap"
+                          scale={scaleB}
+                          xChannelSelector="R"
+                          yChannelSelector="G"
+                          result="dispB"
+                        />
+                        <feColorMatrix
+                          in="dispB"
+                          type="matrix"
+                          values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
+                          result="b"
+                        />
+                        <feBlend in="r" in2="g" mode="screen" result="rg" />
+                        <feBlend in="rg" in2="b" mode="screen" result="rgb" />
+                      </>
+                    ) : (
                       <feDisplacementMap
                         in={blurResult}
                         in2="dispMap"
                         scale={scaleG}
                         xChannelSelector="R"
                         yChannelSelector="G"
-                        result="dispG"
+                        result="disp"
                       />
-                      <feColorMatrix
-                        in="dispG"
-                        type="matrix"
-                        values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
-                        result="g"
-                      />
-                      <feDisplacementMap
-                        in={blurResult}
-                        in2="dispMap"
-                        scale={scaleB}
-                        xChannelSelector="R"
-                        yChannelSelector="G"
-                        result="dispB"
-                      />
-                      <feColorMatrix
-                        in="dispB"
-                        type="matrix"
-                        values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
-                        result="b"
-                      />
-                      <feBlend in="r" in2="g" mode="screen" result="rg" />
-                      <feBlend in="rg" in2="b" mode="screen" result="rgb" />
-                    </>
-                  ) : (
-                    <feDisplacementMap
-                      in={blurResult}
-                      in2="dispMap"
-                      scale={scaleG}
-                      xChannelSelector="R"
-                      yChannelSelector="G"
-                      result="disp"
-                    />
-                  )}
-                </>
-              )}
+                    )}
+                  </>
+                )}
 
-              <feImage
-                x="0"
-                y="0"
-                width={layers.w}
-                height={layers.h}
-                href={layers.darkenUrl}
-                preserveAspectRatio="none"
-                result="darkMap"
-              />
-              <feComposite
-                in={hasSolidBacking ? "SourceGraphic" : dispResult}
-                in2="darkMap"
-                operator="arithmetic"
-                k1="0"
-                k2="1"
-                k3="1"
-                k4="-1"
-                result="darkened"
-              />
-            </filter>
+                {hasDarkenLayer && (
+                  <>
+                    <feImage
+                      x="0"
+                      y="0"
+                      width={layers.w}
+                      height={layers.h}
+                      href={layers.darkenUrl}
+                      preserveAspectRatio="none"
+                      result="darkMap"
+                    />
+                    <feComposite
+                      in={hasSolidBacking ? "SourceGraphic" : dispResult}
+                      in2="darkMap"
+                      operator="arithmetic"
+                      k1="0"
+                      k2="1"
+                      k3="1"
+                      k4="-1"
+                      result="darkened"
+                    />
+                  </>
+                )}
+              </filter>
+            )}
 
             {/* Drop Shadow 3: True Plus-Darker */}
             {dsCfg.all.enabled && (
@@ -665,7 +691,7 @@ export function LiquidGlass({
       )}
 
       {/* 1A. Non-Chromium Top Darkening + Inner Shadow 3 Fallback */}
-      {!useSvg && layers && (
+      {!useSvg && layers && hasDarkenLayer && (
         <div
           style={{
             ...LAYER_BG_STYLE,

@@ -26,6 +26,12 @@ export interface LayerShadingConfig {
   rim: Pick<ResolvedPreset["rim"], "primaryScale" | "bounceScale" | "exp">;
 }
 
+const EMPTY_SHADING: ShadingLayers = {
+  darkenUrl: "",
+  brightenUrl: "",
+  rimUrl: "",
+};
+
 const dispCache = new Map<string, string>();
 const shadingCache = new Map<string, ShadingLayers>();
 
@@ -113,6 +119,17 @@ export function getOrGenerateLayers(
   const ry = h / 2;
   const r = Math.min(radius, rx, ry);
 
+  const l = Math.max(0, lightOpacity) / 100;
+  const primaryRimMax = Math.min(1, l * rimCfg.primaryScale);
+  const bounceRimMax = Math.min(1, l * rimCfg.bounceScale);
+  const topDarkenMax = Math.min(1, l * bevelCfg.topDarkenScale);
+  const bottomBrightenMax = Math.min(1, l * bevelCfg.bottomBrightenScale);
+
+  const needsDarken = topDarkenMax > 0 || isDarkCfg.intensity > 0;
+  const needsBrighten = bottomBrightenMax > 0 || isLightCfg.intensity > 0;
+  const needsRim = primaryRimMax > 0 || bounceRimMax > 0;
+  const needsAnyShading = needsDarken || needsBrighten || needsRim;
+
   const needsDisp = svgBackdrop && needsDisplacement;
   const dispKey = `${w}x${h}-${r}-${depth}-${splay}`;
   const shadingKey = [
@@ -145,12 +162,14 @@ export function getOrGenerateLayers(
   ].join("-");
 
   const cachedDisp = needsDisp ? lruGet(dispCache, dispKey) : "";
-  const cachedShading = lruGet(shadingCache, shadingKey);
+  const cachedShading = needsAnyShading
+    ? lruGet(shadingCache, shadingKey)
+    : EMPTY_SHADING;
 
   const computeDisp = needsDisp && cachedDisp === undefined;
-  const computeShading = cachedShading === undefined;
+  const computeShading = needsAnyShading && cachedShading === undefined;
 
-  if (!computeDisp && !computeShading) {
+  if (!computeDisp && cachedShading !== undefined) {
     return {
       displacementUrl: cachedDisp ?? "",
       ...cachedShading,
@@ -161,32 +180,32 @@ export function getOrGenerateLayers(
   const dispSurface = computeDisp ? createCanvas2D(w, h) : null;
   const dispData = dispSurface?.data ?? null;
 
-  // 2 & 3. Shading & Rim Canvases
+  // 2 & 3. Shading & Rim Canvases (allocate only active layers)
   let darkSurface: ReturnType<typeof createCanvas2D> = null;
   let brightSurface: ReturnType<typeof createCanvas2D> = null;
   let rimSurface: ReturnType<typeof createCanvas2D> = null;
 
   if (computeShading) {
-    darkSurface = createCanvas2D(w, h);
-    brightSurface = createCanvas2D(w, h);
-    rimSurface = createCanvas2D(w, h);
-    if (!darkSurface || !brightSurface || !rimSurface) {
+    darkSurface = needsDarken ? createCanvas2D(w, h) : null;
+    brightSurface = needsBrighten ? createCanvas2D(w, h) : null;
+    rimSurface = needsRim ? createCanvas2D(w, h) : null;
+    if (
+      (needsDarken && !darkSurface) ||
+      (needsBrighten && !brightSurface) ||
+      (needsRim && !rimSurface)
+    ) {
       return {
         displacementUrl: cachedDisp ?? "",
-        darkenUrl: "",
-        brightenUrl: "",
-        rimUrl: "",
+        ...EMPTY_SHADING,
       };
     }
-    if (svgBackdrop) darkSurface.data.fill(255);
+    if (darkSurface && svgBackdrop) darkSurface.data.fill(255);
   }
 
   if (computeDisp && !dispSurface) {
     return {
       displacementUrl: "",
-      darkenUrl: cachedShading?.darkenUrl ?? "",
-      brightenUrl: cachedShading?.brightenUrl ?? "",
-      rimUrl: cachedShading?.rimUrl ?? "",
+      ...(cachedShading ?? EMPTY_SHADING),
     };
   }
 
@@ -211,12 +230,6 @@ export function getOrGenerateLayers(
   const lx = Math.cos(rad);
   const ly = Math.sin(rad);
 
-  const l = lightOpacity / 100;
-  const primaryRimMax = Math.min(1, l * rimCfg.primaryScale);
-  const bounceRimMax = Math.min(1, l * rimCfg.bounceScale);
-  const topDarkenMax = Math.min(1, l * bevelCfg.topDarkenScale);
-  const bottomBrightenMax = Math.min(1, l * bevelCfg.bottomBrightenScale);
-
   const shoulderT = refCfg.shoulderThreshold;
   const shoulderSpan = 1 - shoulderT;
   const shoulderNorm = shoulderT + shoulderSpan * 0.5;
@@ -237,10 +250,15 @@ export function getOrGenerateLayers(
     );
   };
 
-  const maxShadeDist = Math.max(shadeDepth, isLightCfg.depth, isDarkCfg.depth);
+  const maxShadeDist = Math.max(
+    topDarkenMax > 0 || bottomBrightenMax > 0 ? shadeDepth : 0,
+    isLightCfg.intensity > 0 ? isLightCfg.depth : 0,
+    isDarkCfg.intensity > 0 ? isDarkCfg.depth : 0,
+  );
   const maxComputeDist = Math.max(
     dispData ? bevel : 0,
-    darkData ? Math.max(maxShadeDist, 3) : 0,
+    darkData || brightData ? maxShadeDist : 0,
+    rimData ? 3 : 0,
   );
 
   for (let y = 0; y < h; y++) {
@@ -299,15 +317,17 @@ export function getOrGenerateLayers(
         dispData[idx + 3] = 255;
       }
 
-      if (!darkData || !brightData || !rimData) continue;
-
-      const dot = normX * lx + normY * ly;
+      if (!darkData && !brightData && !rimData) continue;
 
       // --- B. Fixed-Distance Bevel Shading + Inner Shadows 1, 2 & 3 ---
-      let darkSub = 0;
-      let addAlpha = 0;
+      if (
+        (darkData || brightData) &&
+        distFromEdge >= 0 &&
+        distFromEdge < maxShadeDist
+      ) {
+        let darkSub = 0;
+        let addAlpha = 0;
 
-      if (distFromEdge >= 0 && distFromEdge < maxShadeDist) {
         let sNormX = normX;
         let sNormY = normY;
         if (!sameShadeRadius) {
@@ -324,11 +344,11 @@ export function getOrGenerateLayers(
         if (distFromEdge < shadeDepth) {
           const s = 1 - distFromEdge / shadeDepth;
 
-          if (shadeDot > 0) {
+          if (darkData && topDarkenMax > 0 && shadeDot > 0) {
             const topProfile = Math.pow(s, bevelCfg.topProfileExp);
             const dir = Math.pow(shadeDot, bevelCfg.topDirExp);
             darkSub += topDarkenMax * topProfile * dir;
-          } else if (shadeDot < 0) {
+          } else if (brightData && bottomBrightenMax > 0 && shadeDot < 0) {
             const bottomProfile = Math.pow(s, bevelCfg.bottomProfileExp);
             const dir = Math.pow(-shadeDot, bevelCfg.bottomDirExp);
             addAlpha += bottomBrightenMax * bottomProfile * dir;
@@ -336,70 +356,75 @@ export function getOrGenerateLayers(
         }
 
         // Inner Shadows 1 & 2 (Top + Bottom, Plus lighter)
-        const verticalDot = Math.abs(sNormY);
         if (
+          brightData &&
           isLightCfg.intensity > 0 &&
-          verticalDot > 0 &&
           distFromEdge < isLightCfg.depth
         ) {
-          const innerT = Math.max(
-            0,
-            1 - Math.max(0, distFromEdge - 1) / isLightCfg.depth,
-          );
-          const profile = Math.pow(innerT, isLightCfg.falloff);
-          const dir = Math.pow(verticalDot, isLightCfg.dirExp);
-          addAlpha += isLightCfg.intensity * profile * dir;
+          const verticalDot = Math.abs(sNormY);
+          if (verticalDot > 0) {
+            const innerT = Math.max(
+              0,
+              1 - Math.max(0, distFromEdge - 1) / isLightCfg.depth,
+            );
+            const profile = Math.pow(innerT, isLightCfg.falloff);
+            const dir = Math.pow(verticalDot, isLightCfg.dirExp);
+            addAlpha += isLightCfg.intensity * profile * dir;
+          }
         }
 
         // Inner Shadow 3 (Top only: #E6E6E6, Plus darker)
-        const topVerticalDot = -sNormY;
         if (
+          darkData &&
           isDarkCfg.intensity > 0 &&
-          topVerticalDot > 0 &&
           distFromEdge < isDarkCfg.depth
         ) {
-          const innerT3 = Math.max(
-            0,
-            1 - Math.max(0, distFromEdge - 1) / isDarkCfg.depth,
-          );
-          const profile = Math.pow(innerT3, isDarkCfg.falloff);
-          const dir = Math.pow(topVerticalDot, isDarkCfg.dirExp);
-          darkSub += isDarkCfg.intensity * profile * dir;
+          const topVerticalDot = -sNormY;
+          if (topVerticalDot > 0) {
+            const innerT3 = Math.max(
+              0,
+              1 - Math.max(0, distFromEdge - 1) / isDarkCfg.depth,
+            );
+            const profile = Math.pow(innerT3, isDarkCfg.falloff);
+            const dir = Math.pow(topVerticalDot, isDarkCfg.dirExp);
+            darkSub += isDarkCfg.intensity * profile * dir;
+          }
         }
-      }
 
-      if (darkSub > 0) {
-        const dither = ign(x, y) - 0.5;
-        if (svgBackdrop) {
-          const val = Math.round(
-            Math.min(255, Math.max(0, (1 - darkSub) * 255 + dither)),
-          );
-          darkData[idx] = val;
-          darkData[idx + 1] = val;
-          darkData[idx + 2] = val;
-          darkData[idx + 3] = 255;
-        } else {
-          darkData[idx] = 0;
-          darkData[idx + 1] = 0;
-          darkData[idx + 2] = 0;
-          darkData[idx + 3] = Math.round(
-            Math.min(255, Math.max(0, Math.min(1, darkSub) * 255 + dither)),
+        if (darkData && darkSub > 0) {
+          const dither = ign(x, y) - 0.5;
+          if (svgBackdrop) {
+            const val = Math.round(
+              Math.min(255, Math.max(0, (1 - darkSub) * 255 + dither)),
+            );
+            darkData[idx] = val;
+            darkData[idx + 1] = val;
+            darkData[idx + 2] = val;
+            darkData[idx + 3] = 255;
+          } else {
+            darkData[idx] = 0;
+            darkData[idx + 1] = 0;
+            darkData[idx + 2] = 0;
+            darkData[idx + 3] = Math.round(
+              Math.min(255, Math.max(0, Math.min(1, darkSub) * 255 + dither)),
+            );
+          }
+        }
+
+        if (brightData && addAlpha > 0) {
+          const dither = ign(x + 11, y + 23) - 0.5;
+          brightData[idx] = 255;
+          brightData[idx + 1] = 255;
+          brightData[idx + 2] = 255;
+          brightData[idx + 3] = Math.round(
+            Math.min(255, Math.max(0, Math.min(1, addAlpha) * 255 + dither)),
           );
         }
-      }
-
-      if (addAlpha > 0) {
-        const dither = ign(x + 11, y + 23) - 0.5;
-        brightData[idx] = 255;
-        brightData[idx + 1] = 255;
-        brightData[idx + 2] = 255;
-        brightData[idx + 3] = Math.round(
-          Math.min(255, Math.max(0, Math.min(1, addAlpha) * 255 + dither)),
-        );
       }
 
       // --- C. 1px Surface-Normal Specular Rim ---
-      if (distFromEdge >= -1 && distFromEdge <= 2.5) {
+      if (rimData && distFromEdge >= -1 && distFromEdge <= 2.5) {
+        const dot = normX * lx + normY * ly;
         const primary = Math.pow(Math.max(0, dot), rimCfg.exp) * primaryRimMax;
         const bounce = Math.pow(Math.max(0, -dot), rimCfg.exp) * bounceRimMax;
         const rimAlpha = Math.min(1, primary + bounce);
@@ -420,14 +445,14 @@ export function getOrGenerateLayers(
   }
 
   let shading: ShadingLayers;
-  if (darkSurface && brightSurface && rimSurface) {
-    darkSurface.ctx.putImageData(darkSurface.img, 0, 0);
-    brightSurface.ctx.putImageData(brightSurface.img, 0, 0);
-    rimSurface.ctx.putImageData(rimSurface.img, 0, 0);
+  if (computeShading) {
+    if (darkSurface) darkSurface.ctx.putImageData(darkSurface.img, 0, 0);
+    if (brightSurface) brightSurface.ctx.putImageData(brightSurface.img, 0, 0);
+    if (rimSurface) rimSurface.ctx.putImageData(rimSurface.img, 0, 0);
     shading = {
-      darkenUrl: darkSurface.canvas.toDataURL(),
-      brightenUrl: brightSurface.canvas.toDataURL(),
-      rimUrl: rimSurface.canvas.toDataURL(),
+      darkenUrl: darkSurface ? darkSurface.canvas.toDataURL() : "",
+      brightenUrl: brightSurface ? brightSurface.canvas.toDataURL() : "",
+      rimUrl: rimSurface ? rimSurface.canvas.toDataURL() : "",
     };
     lruSet(shadingCache, shadingKey, shading);
   } else {
