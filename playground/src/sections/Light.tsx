@@ -1,5 +1,5 @@
 import { Draggable } from "@/components/Draggable";
-import { LiquidGlass } from "liquid-glass";
+import { LiquidGlass } from "@davidwuchta/liquid-glass";
 
 export const Light = () => {
   return (

@@ -25,7 +25,7 @@ npm install github:davidwuchta/liquid-glass
 **From npm:**
 
 ```bash
-npm install liquid-glass
+npm install @davidwuchta/liquid-glass
 ```
 
 > **Peer dependencies:** Requires `react >= 19` and `react-dom >= 19`.
@@ -35,7 +35,7 @@ npm install liquid-glass
 ## Quick Start
 
 ```tsx
-import { LiquidGlass } from "liquid-glass";
+import { LiquidGlass } from "@davidwuchta/liquid-glass";
 
 export function Example() {
   return (
@@ -132,7 +132,7 @@ Every visual layer can be fine-tuned, toggled via `enabled`, or disabled complet
 To append to a preset's fills instead of replacing them, spread `resolvePreset(theme, variant).fills`:
 
 ```tsx
-import { LiquidGlass, resolvePreset } from "liquid-glass";
+import { LiquidGlass, resolvePreset } from "@davidwuchta/liquid-glass";
 
 const baseFills = resolvePreset("light", "clear").fills;
 
@@ -173,7 +173,7 @@ Define shared configurations with `LiquidGlassConfig` and spread them onto any i
 
 ```tsx
 import type React from "react";
-import { LiquidGlass, type LiquidGlassConfig } from "liquid-glass";
+import { LiquidGlass, type LiquidGlassConfig } from "@davidwuchta/liquid-glass";
 
 const modalGlass: LiquidGlassConfig = {
   frost: 24,
