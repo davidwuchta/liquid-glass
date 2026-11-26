@@ -221,7 +221,7 @@ export const GLASS_CONFIG = {
   },
   gradient: {
     color: "rgba(255, 255, 255, 0.1)",
-    angle: 180,
+    angle: 0,
     start: 0 as number | string,
     end: 75 as number | string,
     blendMode: "normal" as React.CSSProperties["mixBlendMode"],
@@ -454,6 +454,7 @@ function resolveGradient(base?: GradientOverride, override?: GradientOverride) {
 
   const angle =
     overrideObj?.angle ?? baseObj?.angle ?? GLASS_CONFIG.gradient.angle;
+  const cssAngle = angle + 180;
   const blendMode =
     overrideObj?.blendMode ??
     baseObj?.blendMode ??
@@ -472,7 +473,7 @@ function resolveGradient(base?: GradientOverride, override?: GradientOverride) {
 
     return {
       enabled: true,
-      backgroundImage: `linear-gradient(${angle}deg, ${formattedStops})`,
+      backgroundImage: `linear-gradient(${cssAngle}deg, ${formattedStops})`,
       blendMode,
     };
   }
@@ -498,7 +499,7 @@ function resolveGradient(base?: GradientOverride, override?: GradientOverride) {
 
   return {
     enabled: true,
-    backgroundImage: `linear-gradient(${angle}deg, ${startColor} ${startPos}, ${endColor} ${endPos})`,
+    backgroundImage: `linear-gradient(${cssAngle}deg, ${startColor} ${startPos}, ${endColor} ${endPos})`,
     blendMode,
   };
 }

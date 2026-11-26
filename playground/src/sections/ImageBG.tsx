@@ -55,7 +55,6 @@ export const ImageBG = () => {
               gradient={{
                 color: "#ffffff",
                 opacity: 0.07,
-                angle: 180,
                 start: 0,
                 end: 75,
                 blendMode: "plus-lighter",

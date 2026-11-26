@@ -3,8 +3,6 @@ export {
   GLASS_CONFIG,
   GLASS_PRESETS,
   GLASS_TINT_PRESETS,
-  parseColor,
-  resolveColor,
   resolvePreset,
   type BevelOverride,
   type DropShadowOverride,
