@@ -1,5 +1,8 @@
 # @davidwuchta/liquid-glass
 
+[![npm version](https://img.shields.io/npm/v/@davidwuchta/liquid-glass)](https://www.npmjs.com/package/@davidwuchta/liquid-glass)
+[![license](https://img.shields.io/npm/l/@davidwuchta/liquid-glass)](./LICENSE)
+
 Apple-inspired Liquid Glass component for React 19+ with physical edge refraction, RGB chromatic dispersion, specular rim lighting, container gradients, and zero CSS framework dependencies.
 
 ---
