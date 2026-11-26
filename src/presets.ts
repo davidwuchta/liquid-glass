@@ -48,7 +48,7 @@ export type GradientOverride =
       endColor?: string;
       /** Optional opacity multiplier (`0`–`1`) applied to `endColor`. */
       endOpacity?: number;
-      /** Gradient direction in degrees (`180` = top to bottom). @default 180 */
+      /** Direction the gradient originates from in degrees, matching `lightAngle` (`0` = top, `90` = right, `180` = bottom, `270` = left). @default 0 */
       angle?: number;
       /** Where the gradient begins (percentage number or CSS length/percentage). @default 0 */
       start?: number | string;

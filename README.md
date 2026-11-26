@@ -107,21 +107,21 @@ export function Example() {
 
 ### Core & Optical Props
 
-| Prop               | Type                              | Default              | Description                                                                                        |
-| :----------------- | :-------------------------------- | :------------------- | :------------------------------------------------------------------------------------------------- |
-| `theme`            | `"dark" \| "light"`               | `"dark"`             | Preset to calibrate fills, shadows, and rim lighting for dark or light surfaces.                   |
-| `variant`          | `"clear" \| "opaque" \| "tinted"` | `"clear"`            | Preset glass style. Defaults to `"tinted"` when `tint` is passed without `variant`.                |
-| `tint`             | `GlassTintColor \| string`        | `"blue"`             | Built-in tint-colors or custom color (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`, `rgb()`, `rgba()`). |
-| `radius`           | `number`                          | CSS `border-radius`  | Explicit corner radius in pixels. Omit to control rounding via CSS or Tailwind.                    |
-| `refraction`       | `number`                          | `70`                 | Edge lens displacement strength (`0`–`100`).                                                       |
-| `depth`            | `number`                          | `30`                 | Width of the refracting glass bevel in pixels.                                                     |
-| `dispersion`       | `number`                          | `20`                 | RGB chromatic aberration spread. Set to `0` for a faster single-pass GPU filter.                   |
-| `frost`            | `number`                          | `6`, `16`(on opaque) | Backdrop blur intensity.                                                                           |
-| `splay`            | `number`                          | `20`                 | Bevel falloff curve sharpness (`0`–`100`).                                                         |
-| `lightAngle`       | `number`                          | `0`                  | Specular rim and bevel lighting direction in degrees.                                              |
-| `lightOpacity`     | `number`                          | `25`                 | Master brightness of the rim highlight and bevel shading (`0`–`100`).                              |
-| `contentClassName` | `string`                          | `undefined`          | ClassName applied to the inner `z-10` content slot.                                                |
-| `contentStyle`     | `React.CSSProperties`             | `undefined`          | CSS Style applied to the inner `z-10` content slot.                                                |
+| Prop               | Type                              | Default               | Description                                                                                        |
+| :----------------- | :-------------------------------- | :-------------------- | :------------------------------------------------------------------------------------------------- |
+| `theme`            | `"dark" \| "light"`               | `"dark"`              | Preset to calibrate fills, shadows, and rim lighting for dark or light surfaces.                   |
+| `variant`          | `"clear" \| "opaque" \| "tinted"` | `"clear"`             | Preset glass style. Defaults to `"tinted"` when `tint` is passed without `variant`.                |
+| `tint`             | `GlassTintColor \| string`        | `"blue"`              | Built-in tint-colors or custom color (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`, `rgb()`, `rgba()`). |
+| `radius`           | `number`                          | CSS `border-radius`   | Explicit corner radius in pixels. Omit to control rounding via CSS or Tailwind.                    |
+| `refraction`       | `number`                          | `70`                  | Edge lens displacement strength (`0`–`100`).                                                       |
+| `depth`            | `number`                          | `30`                  | Width of the refracting glass bevel in pixels.                                                     |
+| `dispersion`       | `number`                          | `20`                  | RGB chromatic aberration spread. Set to `0` for a faster single-pass GPU filter.                   |
+| `frost`            | `number`                          | `6`, `16` (on opaque) | Backdrop blur intensity.                                                                           |
+| `splay`            | `number`                          | `20`                  | Bevel falloff curve sharpness (`0`–`100`).                                                         |
+| `lightAngle`       | `number`                          | `0`                   | Specular rim and bevel lighting direction in degrees.                                              |
+| `lightOpacity`     | `number`                          | `25`                  | Master brightness of the rim highlight and bevel shading (`0`–`100`).                              |
+| `contentClassName` | `string`                          | `undefined`           | ClassName applied to the inner `z-10` content slot.                                                |
+| `contentStyle`     | `React.CSSProperties`             | `undefined`           | CSS Style applied to the inner `z-10` content slot.                                                |
 
 ### Layer Overrides
 
@@ -147,18 +147,18 @@ Every visual layer can be fine-tuned, toggled via the `enabled` prop, or disable
 
 Pass `gradient={{}}` to enable the default top-to-bottom sheen, or customize any property:
 
-| Option       | Type                                  | Default                      | Description                                                                                                |
-| :----------- | :------------------------------------ | :--------------------------- | :--------------------------------------------------------------------------------------------------------- |
-| `enabled`    | `boolean`                             | `true` (when object passed)  | Toggles the gradient layer.                                                                                |
-| `color`      | `string`                              | `"rgba(255, 255, 255, 0.1)"` | Start color (hex, `rgb()`, or `rgba()`).                                                                   |
-| `opacity`    | `number`                              | `undefined`                  | Optional `0`–`1` opacity multiplier applied to `color`.                                                    |
-| `endColor`   | `string`                              | `color` at `0` opacity       | End color. Omit to fade cleanly to the same RGB at `0` alpha without dark banding.                         |
-| `endOpacity` | `number`                              | `undefined`                  | Optional `0`–`1` opacity multiplier applied to `endColor`.                                                 |
-| `angle`      | `number`                              | `0`                          | Direction in degrees (`0` = top to bottom).                                                                |
-| `start`      | `number \| string`                    | `0`                          | Where the gradient begins (number treated as `%`, or any CSS length/percentage like `"12px"`).             |
-| `end`        | `number \| string`                    | `75`                         | Where the gradient ends (number treated as `%`, or any CSS length/percentage).                             |
-| `blendMode`  | `React.CSSProperties["mixBlendMode"]` | `"normal"`                   | CSS `mix-blend-mode` for the gradient layer (e.g. `"plus-lighter"`, `"screen"`, `"soft-light"`).           |
-| `stops`      | `GlassGradientStop[]`                 | `undefined`                  | Custom multi-stop array (`{ color, opacity?, position? }`). Overrides `color`, `endColor`, `start`, `end`. |
+| Option       | Type                                  | Default                      | Description                                                                                                                       |
+| :----------- | :------------------------------------ | :--------------------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`    | `boolean`                             | `true` (when object passed)  | Toggles the gradient layer.                                                                                                       |
+| `color`      | `string`                              | `"rgba(255, 255, 255, 0.1)"` | Start color (hex, `rgb()`, or `rgba()`).                                                                                          |
+| `opacity`    | `number`                              | `undefined`                  | Optional `0`–`1` opacity multiplier applied to `color`.                                                                           |
+| `endColor`   | `string`                              | `color` at `0` opacity       | End color. Omit to fade cleanly to the same RGB at `0` alpha without dark banding.                                                |
+| `endOpacity` | `number`                              | `undefined`                  | Optional `0`–`1` opacity multiplier applied to `endColor`.                                                                        |
+| `angle`      | `number`                              | `0`                          | Direction the gradient originates from in degrees, matching `lightAngle` (`0` = top, `90` = right, `180` = bottom, `270` = left). |
+| `start`      | `number \| string`                    | `0`                          | Where the gradient begins (number treated as `%`, or any CSS length/percentage like `"12px"`).                                    |
+| `end`        | `number \| string`                    | `75`                         | Where the gradient ends (number treated as `%`, or any CSS length/percentage).                                                    |
+| `blendMode`  | `React.CSSProperties["mixBlendMode"]` | `"normal"`                   | CSS `mix-blend-mode` for the gradient layer (e.g. `"plus-lighter"`, `"screen"`, `"soft-light"`).                                  |
+| `stops`      | `GlassGradientStop[]`                 | `undefined`                  | Custom multi-stop array (`{ color, opacity?, position? }`). Overrides `color`, `endColor`, `start`, `end`.                        |
 
 Example: Multi-stop gradient for a brighter top edge with a long soft tail
 
