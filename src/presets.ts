@@ -20,45 +20,131 @@ export const GLASS_TINT_PRESETS: Record<GlassTintColor, string> = {
 };
 
 export interface GlassFill {
+  /** Any valid CSS color: hex (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`), `rgb(...)`, `rgba(...)`, etc. */
   color: string;
+  /** Optional opacity multiplier (`0`–`1`), useful with hex or `rgb(...)` colors. */
+  opacity?: number;
   blendMode?: React.CSSProperties["mixBlendMode"];
 }
 
-export function parseHexColor(hex: string): [number, number, number] {
-  const clean = hex.replace("#", "").trim();
-  const full =
-    clean.length === 3 || clean.length === 4
-      ? clean
-          .slice(0, 3)
-          .split("")
-          .map((c) => c + c)
-          .join("")
-      : clean.length === 8
-        ? clean.slice(0, 6)
-        : clean;
-  const num = parseInt(full, 16);
-  if (full.length !== 6 || Number.isNaN(num)) return [0, 136, 255];
-  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+export interface GlassGradientStop {
+  /** Stop color (hex, `rgb(...)`, or `rgba(...)`). */
+  color: string;
+  /** Optional opacity multiplier (`0`–`1`). */
+  opacity?: number;
+  /** Stop position as a percentage number (e.g. `0`, `75`) or CSS length/percentage (e.g. `"40%"`, `"120px"`). */
+  position?: number | string;
 }
 
-function hexToLuma(hex: string): number {
-  const [r, g, b] = parseHexColor(hex);
+export type GradientOverride =
+  | false
+  | {
+      enabled?: boolean;
+      /** Start color (hex, `rgb(...)`, or `rgba(...)`). @default "rgba(255, 255, 255, 0.1)" */
+      color?: string;
+      /** Optional opacity multiplier (`0`–`1`) applied to `color`. */
+      opacity?: number;
+      /** End color (hex, `rgb(...)`, or `rgba(...)`). Defaults to `color` at `0` opacity for a clean fade. */
+      endColor?: string;
+      /** Optional opacity multiplier (`0`–`1`) applied to `endColor`. */
+      endOpacity?: number;
+      /** Gradient direction in degrees (`180` = top to bottom). @default 180 */
+      angle?: number;
+      /** Where the gradient begins (percentage number or CSS length/percentage). @default 0 */
+      start?: number | string;
+      /** Where the gradient ends (percentage number or CSS length/percentage). @default 75 */
+      end?: number | string;
+      /** CSS `mix-blend-mode` for the gradient layer. @default "normal" */
+      blendMode?: React.CSSProperties["mixBlendMode"];
+      /** Optional custom multi-stop array. When provided, overrides `color`, `endColor`, `start`, and `end`. */
+      stops?: GlassGradientStop[];
+    };
+
+/** Parses hex (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`) or `rgb()`/`rgba()` into `[r, g, b, a]`. Returns `null` for other CSS color formats. */
+export function parseColor(
+  color: string,
+): [number, number, number, number] | null {
+  const trimmed = color.trim();
+
+  if (trimmed.startsWith("#")) {
+    const clean = trimmed.slice(1);
+    let r: number;
+    let g: number;
+    let b: number;
+    let a = 1;
+
+    if (clean.length === 3 || clean.length === 4) {
+      r = parseInt(clean[0] + clean[0], 16);
+      g = parseInt(clean[1] + clean[1], 16);
+      b = parseInt(clean[2] + clean[2], 16);
+      if (clean.length === 4) a = parseInt(clean[3] + clean[3], 16) / 255;
+    } else if (clean.length === 6 || clean.length === 8) {
+      r = parseInt(clean.slice(0, 2), 16);
+      g = parseInt(clean.slice(2, 4), 16);
+      b = parseInt(clean.slice(4, 6), 16);
+      if (clean.length === 8) a = parseInt(clean.slice(6, 8), 16) / 255;
+    } else {
+      return null;
+    }
+
+    if (
+      Number.isNaN(r) ||
+      Number.isNaN(g) ||
+      Number.isNaN(b) ||
+      Number.isNaN(a)
+    ) {
+      return null;
+    }
+    return [r, g, b, a];
+  }
+
+  const rgbMatch = trimmed.match(
+    /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i,
+  );
+  if (rgbMatch) {
+    const r = Math.min(255, Math.max(0, Math.round(Number(rgbMatch[1]))));
+    const g = Math.min(255, Math.max(0, Math.round(Number(rgbMatch[2]))));
+    const b = Math.min(255, Math.max(0, Math.round(Number(rgbMatch[3]))));
+    const a =
+      rgbMatch[4] !== undefined
+        ? Math.min(1, Math.max(0, Number(rgbMatch[4])))
+        : 1;
+    return [r, g, b, a];
+  }
+
+  return null;
+}
+
+/** Resolves hex or `rgb()`/`rgba()` colors with an optional `0`–`1` opacity multiplier into a CSS color string. */
+export function resolveColor(color: string, opacity?: number): string {
+  if (opacity === undefined) return color;
+  const clamped = Math.min(1, Math.max(0, opacity));
+  const parsed = parseColor(color);
+  if (parsed) {
+    const [r, g, b, baseAlpha] = parsed;
+    return `rgba(${r}, ${g}, ${b}, ${Number((baseAlpha * clamped).toFixed(4))})`;
+  }
+  return `color-mix(in srgb, ${color.trim()} ${Number((clamped * 100).toFixed(2))}%, transparent)`;
+}
+
+function colorToLuma(color: string): number {
+  const [r, g, b] = parseColor(color) ?? [0, 136, 255];
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
 // Calibrated to Figma's 1px integer Plus-Darker drop shadow rings (#CCCCCC -> 0.1, #D0D0D0 -> 0.092, #E8E8E8 -> 0.045)
-export function hexToDropShadowIntensity(hex: string): number {
-  return Number(((1 - hexToLuma(hex)) / 2).toFixed(4));
+export function hexToDropShadowIntensity(color: string): number {
+  return Number(((1 - colorToLuma(color)) / 2).toFixed(4));
 }
 
 // Calibrated to Figma's Plus-Lighter inner shadows (#1A1A1A -> 0.08, #282828 -> 0.123)
-export function hexToInnerShadowLightIntensity(hex: string): number {
-  return Number((hexToLuma(hex) * (0.08 / (26 / 255))).toFixed(4));
+export function hexToInnerShadowLightIntensity(color: string): number {
+  return Number((colorToLuma(color) * (0.08 / (26 / 255))).toFixed(4));
 }
 
 // Calibrated to Figma's Plus-Darker top inner shadow (#E6E6E6 -> 0.025)
-export function hexToInnerShadowDarkIntensity(hex: string): number {
-  return Number(((1 - hexToLuma(hex)) * (0.025 / (25 / 255))).toFixed(4));
+export function hexToInnerShadowDarkIntensity(color: string): number {
+  return Number(((1 - colorToLuma(color)) * (0.025 / (25 / 255))).toFixed(4));
 }
 
 export const GLASS_CONFIG = {
@@ -133,6 +219,13 @@ export const GLASS_CONFIG = {
     // DS 4: x: 0, y: 8, blur: 15, spread: 0 (#000000 4%, Normal)
     ambient: "0px 8px 15px 0px rgba(0, 0, 0, 0.04)",
   },
+  gradient: {
+    color: "rgba(255, 255, 255, 0.1)",
+    angle: 180,
+    start: 0 as number | string,
+    end: 75 as number | string,
+    blendMode: "normal" as React.CSSProperties["mixBlendMode"],
+  },
   fills: [
     // Default (Dark Clear): #999999 17%, Luminosity
     { color: "rgba(153, 153, 153, 0.17)", blendMode: "luminosity" },
@@ -147,7 +240,7 @@ export type InnerShadowLightOverride =
   | false
   | (Partial<typeof GLASS_CONFIG.innerShadow.light> & {
       enabled?: boolean;
-      /** Figma hex color (Plus lighter), e.g. "#1A1A1A" or "#282828". Ignored if `intensity` is also set. */
+      /** Hex or `rgb()`/`rgba()` color (Plus lighter), e.g. `"#1A1A1A"` or `"rgb(26, 26, 26)"`. Ignored if `intensity` is also set. */
       color?: string;
     });
 
@@ -155,7 +248,7 @@ export type InnerShadowDarkOverride =
   | false
   | (Partial<typeof GLASS_CONFIG.innerShadow.dark> & {
       enabled?: boolean;
-      /** Figma hex color (Plus darker), e.g. "#E6E6E6". Ignored if `intensity` is also set. */
+      /** Hex or `rgb()`/`rgba()` color (Plus darker), e.g. `"#E6E6E6"` or `"rgb(230, 230, 230)"`. Ignored if `intensity` is also set. */
       color?: string;
     });
 
@@ -177,7 +270,7 @@ export type DropShadowRingOverride =
       enabled?: boolean;
       widthPx?: number;
       intensity?: number;
-      /** Figma hex color (Plus darker), e.g. "#D0D0D0" or "#E8E8E8". Ignored if `intensity` is also set. */
+      /** Hex or `rgb()`/`rgba()` color (Plus darker), e.g. `"#D0D0D0"` or `"rgb(208, 208, 208)"`. Ignored if `intensity` is also set. */
       color?: string;
     };
 
@@ -216,7 +309,9 @@ export interface LiquidGlassConfig {
   rim?: RimOverride;
   /** Drop shadow overrides (`sides`, `all`, and `ambient`), deep-merged with the active preset, or `false` to disable all. */
   dropShadow?: DropShadowOverride;
-  /** Glass body fills rendered bottom-to-top (replaces preset fills), or `false` to remove all fills. */
+  /** Container gradient overlay (e.g. subtle top sheen), or `false` to disable. */
+  gradient?: GradientOverride;
+  /** Glass body fills rendered bottom-to-top (replaces preset fills), or `false` to remove all fills. Supports hex, `rgb()`, and `rgba()` with optional `opacity`. */
   fills?: GlassFill[] | false;
 }
 
@@ -329,6 +424,83 @@ function isLayerEnabled(
   if (override !== undefined) return override.enabled ?? true;
   if (base === false) return false;
   return base?.enabled ?? true;
+}
+
+function isGradientEnabled(
+  base: GradientOverride | undefined,
+  override: GradientOverride | undefined,
+): boolean {
+  if (override === false) return false;
+  if (override !== undefined) return override.enabled ?? true;
+  if (base === false || base === undefined) return false;
+  return base.enabled ?? true;
+}
+
+function formatStopPosition(position: number | string): string {
+  return typeof position === "number" ? `${position}%` : position;
+}
+
+function resolveGradient(base?: GradientOverride, override?: GradientOverride) {
+  if (!isGradientEnabled(base, override)) {
+    return {
+      enabled: false,
+      backgroundImage: undefined as string | undefined,
+      blendMode: GLASS_CONFIG.gradient.blendMode,
+    };
+  }
+
+  const baseObj = base || undefined;
+  const overrideObj = override || undefined;
+
+  const angle =
+    overrideObj?.angle ?? baseObj?.angle ?? GLASS_CONFIG.gradient.angle;
+  const blendMode =
+    overrideObj?.blendMode ??
+    baseObj?.blendMode ??
+    GLASS_CONFIG.gradient.blendMode;
+  const stops = overrideObj?.stops ?? baseObj?.stops;
+
+  if (stops && stops.length > 0) {
+    const formattedStops = stops
+      .map((stop) => {
+        const resolved = resolveColor(stop.color, stop.opacity);
+        return stop.position !== undefined
+          ? `${resolved} ${formatStopPosition(stop.position)}`
+          : resolved;
+      })
+      .join(", ");
+
+    return {
+      enabled: true,
+      backgroundImage: `linear-gradient(${angle}deg, ${formattedStops})`,
+      blendMode,
+    };
+  }
+
+  const rawStartColor =
+    overrideObj?.color ?? baseObj?.color ?? GLASS_CONFIG.gradient.color;
+  const startOpacity = overrideObj?.opacity ?? baseObj?.opacity;
+  const startColor = resolveColor(rawStartColor, startOpacity);
+
+  const rawEndColor = overrideObj?.endColor ?? baseObj?.endColor;
+  const endOpacity = overrideObj?.endOpacity ?? baseObj?.endOpacity;
+  const endColor =
+    rawEndColor !== undefined
+      ? resolveColor(rawEndColor, endOpacity)
+      : resolveColor(rawStartColor, 0);
+
+  const startPos = formatStopPosition(
+    overrideObj?.start ?? baseObj?.start ?? GLASS_CONFIG.gradient.start,
+  );
+  const endPos = formatStopPosition(
+    overrideObj?.end ?? baseObj?.end ?? GLASS_CONFIG.gradient.end,
+  );
+
+  return {
+    enabled: true,
+    backgroundImage: `linear-gradient(${angle}deg, ${startColor} ${startPos}, ${endColor} ${endPos})`,
+    blendMode,
+  };
 }
 
 function resolveBevel(base?: BevelOverride, override?: BevelOverride) {
@@ -530,12 +702,17 @@ export function resolvePreset(
   overrides?: LiquidGlassConfig,
 ) {
   const base = GLASS_PRESETS[theme][variant];
-  const fills =
+  const rawFills =
     overrides?.fills === false
       ? []
       : (overrides?.fills ??
         (base.fills === false ? [] : base.fills) ??
         GLASS_CONFIG.fills);
+
+  const fills = rawFills.map((fill) => ({
+    color: resolveColor(fill.color, fill.opacity),
+    blendMode: fill.blendMode,
+  }));
 
   const backingColor =
     overrides?.backingColor === false
@@ -571,6 +748,7 @@ export function resolvePreset(
     innerShadow: resolveInnerShadow(base.innerShadow, overrides?.innerShadow),
     rim: resolveRim(base.rim, overrides?.rim),
     dropShadow: resolveDropShadow(base.dropShadow, overrides?.dropShadow),
+    gradient: resolveGradient(base.gradient, overrides?.gradient),
     fills,
   };
 }

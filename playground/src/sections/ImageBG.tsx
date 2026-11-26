@@ -52,6 +52,14 @@ export const ImageBG = () => {
               dispersion={0}
               frost={90}
               radius={64}
+              gradient={{
+                color: "#ffffff",
+                opacity: 0.07,
+                angle: 180,
+                start: 0,
+                end: 75,
+                blendMode: "plus-lighter",
+              }}
               className="w-64 h-32"
               contentClassName="flex items-center justify-center"
             >

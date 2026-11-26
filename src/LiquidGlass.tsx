@@ -10,7 +10,7 @@ import {
 import {
   GLASS_CONFIG,
   GLASS_TINT_PRESETS,
-  parseHexColor,
+  parseColor,
   resolvePreset,
   type GlassTheme,
   type GlassTintColor,
@@ -71,7 +71,7 @@ export interface LiquidGlassProps
   theme?: GlassTheme;
   /** Glass preset variant. Automatically defaults to `"tinted"` when `tint` is provided without `variant`. @default "clear" */
   variant?: GlassVariant;
-  /** Tint preset name or custom hex color (e.g. `"purple"` or `"#FF2D55"`). Automatically switches `variant` to `"tinted"` unless `variant` is explicitly set. @default "blue" */
+  /** Tint preset name or custom color (hex, `rgb()`, or `rgba()`, e.g. `"purple"`, `"#FF2D55"`, `"rgb(255, 45, 85)"`). Automatically switches `variant` to `"tinted"` unless `variant` is explicitly set. @default "blue" */
   tint?: GlassTintColor | (string & {});
   /** Explicit corner radius in pixels. Omit to use CSS / Tailwind border-radius utilities. */
   radius?: number;
@@ -98,6 +98,7 @@ export function LiquidGlass({
   innerShadow,
   rim,
   dropShadow,
+  gradient,
   fills: fillsOverride,
   radius,
   className,
@@ -124,6 +125,7 @@ export function LiquidGlass({
     innerShadow,
     rim,
     dropShadow,
+    gradient,
     fills: fillsOverride,
   });
 
@@ -140,6 +142,7 @@ export function LiquidGlass({
     innerShadow: { light: isLightCfg, dark: isDarkCfg },
     rim: rimCfg,
     dropShadow: dsCfg,
+    gradient: gradientCfg,
     fills,
   } = preset;
 
@@ -184,7 +187,9 @@ export function LiquidGlass({
   const tintHex = isTinted
     ? (GLASS_TINT_PRESETS[resolvedTint as GlassTintColor] ?? resolvedTint)
     : null;
-  const [tintR, tintG, tintB] = tintHex ? parseHexColor(tintHex) : [0, 0, 0];
+  const [tintR, tintG, tintB] = (tintHex ? parseColor(tintHex) : null) ?? [
+    0, 136, 255,
+  ];
   const tintSubR = (1 - tintR / 255).toFixed(4);
   const tintSubG = (1 - tintG / 255).toFixed(4);
   const tintSubB = (1 - tintB / 255).toFixed(4);
@@ -194,7 +199,7 @@ export function LiquidGlass({
   const dsSidesFilterId = `lg-ds-sides-${cleanId}-${sanitizeIdPart(dsCfg.sides.intensity)}`;
   const dsAllFilterId = `lg-ds-all-${cleanId}-${sanitizeIdPart(dsCfg.all.intensity)}`;
   const tintFilterId = tintHex
-    ? `lg-tint-${cleanId}-${tintHex.replace(/[^a-zA-Z0-9]/g, "")}`
+    ? `lg-tint-${cleanId}-${sanitizeIdPart(tintHex)}`
     : "";
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -734,6 +739,17 @@ export function LiquidGlass({
           }}
         />
       ))}
+
+      {/* 1D. Container Gradient */}
+      {gradientCfg.enabled && gradientCfg.backgroundImage && (
+        <div
+          style={{
+            ...LAYER_BASE_STYLE,
+            backgroundImage: gradientCfg.backgroundImage,
+            mixBlendMode: gradientCfg.blendMode ?? "normal",
+          }}
+        />
+      )}
 
       {/* 2. Additive Brightening + Inner Shadows 1 & 2 (mixBlendMode: "plus-lighter") */}
       {hasBrightenLayer && layers && (
