@@ -1,6 +1,6 @@
 {
   "name": "@davidwuchta/liquid-glass",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Apple-inspired Liquid Glass React component with GPU SVG refraction, chromatic dispersion, and specular rim lighting.",
   "license": "MIT",
   "author": "David Wuchta",
